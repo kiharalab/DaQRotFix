@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><title>correctrotamers mdff</title></head>
+<body>
+<h1>correctrotamers mdff</h1>
+<p>
+<b>correctrotamers mdff</b> <i>structure map</i>
+[<b>radius</b> <i>angstroms</i>]
+[<b>coordinateUpdates</b> <i>count</i>]
+[<b>backboneSpringConstant</b> <i>kJ mol-1 A-2</i>]
+</p>
+<p>
+Snapshot the initial ISOLDE rotamer-outlier list and optimize each residue in
+turn. Canonical targets are tried in decreasing expected probability. Every
+trial starts from the coordinates accepted before that residue, receives a
+short local ISOLDE MDFF minimisation, and is assessed by the number of rotamer
+outliers in the local protein region.
+</p>
+<p>
+The first target with zero local outliers is accepted. If no target reaches
+zero, the target with the fewest local outliers is accepted, with decreasing
+probability as the tie-breaker. Rejected-trial coordinates are restored.
+Backbone N, CA, C and O atoms are temporarily position-restrained; side chains
+remain mobile. The map must already have an enabled ISOLDE MDFF manager.
+</p>
+</body>
+</html>

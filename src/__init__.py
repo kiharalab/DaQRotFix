@@ -9,16 +9,30 @@ class _CorrectRotamerAPI(BundleAPI):
     @staticmethod
     def register_command(bundle_info, command_info, logger):
         from chimerax.core.commands import register
-        from .cmd import correct_rotamers_cmd, correct_rotamers_desc
+        from .cmd import (
+            correct_rotamers_cmd,
+            correct_rotamers_desc,
+            correct_rotamers_mdff_cmd,
+            correct_rotamers_mdff_desc,
+        )
 
-        if command_info.name != "correctrotamers":
+        commands = {
+            "correctrotamers": (correct_rotamers_desc, correct_rotamers_cmd),
+            "correctrotamers mdff": (
+                correct_rotamers_mdff_desc,
+                correct_rotamers_mdff_cmd,
+            ),
+        }
+        try:
+            description, function = commands[command_info.name]
+        except KeyError:
             raise ValueError(f"Unknown command: {command_info.name}")
-        if correct_rotamers_desc.synopsis is None:
-            correct_rotamers_desc.synopsis = command_info.synopsis
+        if description.synopsis is None:
+            description.synopsis = command_info.synopsis
         register(
             command_info.name,
-            correct_rotamers_desc,
-            correct_rotamers_cmd,
+            description,
+            function,
             logger=logger,
         )
 
