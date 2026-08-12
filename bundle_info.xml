@@ -1,0 +1,36 @@
+<BundleInfo name="ChimeraX-CorrectRotamer"
+            version="0.2.0" package="chimerax.correct_rotamer"
+            minSessionVersion="1" maxSessionVersion="1">
+  <Author>Genki Terashi</Author>
+  <Email>gterashi@purdue.edu</Email>
+  <URL>https://github.com/gterashi</URL>
+  <Synopsis>Density-guided correction of ISOLDE rotamer outliers</Synopsis>
+  <Description>
+    Enumerates ISOLDE canonical rotamers for existing outliers, selects valid
+    candidates using side-chain heavy-atom map density, and applies only the
+    best valid candidate. It does not start an ISOLDE simulation or minimization.
+  </Description>
+
+  <Categories>
+    <Category name="Validation"/>
+  </Categories>
+
+  <Dependencies>
+    <Dependency name="ChimeraX-Core" version="~=1.1"/>
+    <Dependency name="ChimeraX-Atomic" version="~=1.0"/>
+    <Dependency name="ChimeraX-Map" version="~=1.0"/>
+    <Dependency name="ChimeraX-UI" version="~=1.0"/>
+    <Dependency name="ChimeraX-ISOLDE" version=">=1.0"/>
+  </Dependencies>
+
+  <Classifiers>
+    <PythonClassifier>Development Status :: 3 - Alpha</PythonClassifier>
+    <PythonClassifier>License :: OSI Approved :: MIT License</PythonClassifier>
+    <ChimeraXClassifier>ChimeraX :: Tool :: Correct Rotamers :: Validation :: Density-guided rotamer correction</ChimeraXClassifier>
+    <ChimeraXClassifier>ChimeraX :: Command :: correctrotamers :: Validation :: Correct ISOLDE rotamer outliers using map density</ChimeraXClassifier>
+  </Classifiers>
+
+  <DataFiles>
+    <DataDir>docs</DataDir>
+  </DataFiles>
+</BundleInfo>

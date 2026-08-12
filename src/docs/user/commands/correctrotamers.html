@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><title>correctrotamers</title></head>
+<body>
+<h1>correctrotamers</h1>
+<p><b>correctrotamers</b> <i>structure map</i></p>
+<p>
+Correct the ISOLDE rotamer outliers present at command start. Every canonical
+target is constructed from the same original coordinates, checked by ISOLDE
+rotamer validation, and scored by the mean map value at side-chain heavy-atom
+centres. Out-of-map targets are rejected. The highest-density valid target is
+applied without using rotamer probability as a ranking term.
+</p>
+<p>
+The map must already have an ISOLDE MDFF manager for the structure. The command
+uses that association only as a prerequisite check. It does not start, pause,
+or minimize an ISOLDE simulation and does not modify MDFF state or restraints.
+</p>
+</body>
+</html>
