@@ -8,6 +8,7 @@
 [<b>radius</b> <i>angstroms</i>]
 [<b>coordinateUpdates</b> <i>count</i>]
 [<b>backboneSpringConstant</b> <i>kJ mol-1 A-2</i>]
+[<b>outlierThreshold</b> <i>P-value</i>]
 </p>
 <p>
 Snapshot the initial ISOLDE rotamer-outlier list and optimize each residue in
@@ -22,6 +23,9 @@ zero, the target with the fewest local outliers is accepted, with decreasing
 probability as the tie-breaker. Rejected-trial coordinates are restored.
 Backbone N, CA, C and O atoms are temporarily position-restrained; side chains
 remain mobile. The map must already have an enabled ISOLDE MDFF manager.
+The default outlier threshold is the current ISOLDE cutoff (normally 0.0005,
+equivalent to 0.05%). The active local region is automatically selected and
+focused while each MDFF trial runs.
 </p>
 </body>
 </html>

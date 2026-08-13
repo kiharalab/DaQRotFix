@@ -64,12 +64,16 @@ class FakeRotamer:
 class FakeRotamerMgr:
     def __init__(self, rotamer):
         self.rotamer = rotamer
+        self.cutoffs = (0.02, 0.0005)
 
     def get_rotamers(self, residues):
         return [self.rotamer]
 
     def outliers(self, rotamers):
         return [self.rotamer], numpy.array([0.0])
+
+    def validate_rotamers(self, rotamers):
+        return numpy.array([0.0 for _rotamer in rotamers])
 
     def get_rotamer(self, residue):
         return self.rotamer
@@ -152,8 +156,12 @@ class LocalMDFFAlgorithmTests(unittest.TestCase):
 
     def test_probability_order_and_first_zero_outlier_candidate_wins(self):
         counts = {2: 2, 3: 0, 1: 1}
-        local_mdff._outliers_in_residues = lambda manager, residues: self._outlier_objects(
-            counts[int(self.model.atoms._coords[0, 0])]
+        local_mdff._outliers_in_residues = (
+            lambda manager, residues, threshold=None: self._outlier_objects(
+                1
+                if int(self.model.atoms._coords[0, 0]) == 0
+                else counts[int(self.model.atoms._coords[0, 0])]
+            )
         )
 
         report = local_mdff.optimize_sidechains_with_local_mdff(
@@ -171,8 +179,12 @@ class LocalMDFFAlgorithmTests(unittest.TestCase):
 
     def test_fewest_outliers_wins_with_probability_as_tie_break(self):
         counts = {2: 3, 3: 1, 1: 1}
-        local_mdff._outliers_in_residues = lambda manager, residues: self._outlier_objects(
-            counts[int(self.model.atoms._coords[0, 0])]
+        local_mdff._outliers_in_residues = (
+            lambda manager, residues, threshold=None: self._outlier_objects(
+                1
+                if int(self.model.atoms._coords[0, 0]) == 0
+                else counts[int(self.model.atoms._coords[0, 0])]
+            )
         )
 
         report = local_mdff.optimize_sidechains_with_local_mdff(
@@ -185,6 +197,27 @@ class LocalMDFFAlgorithmTests(unittest.TestCase):
         self.assertEqual(result.selected.local_outlier_count, 1)
         self.assertEqual(self.model.atoms._coords[0, 0], 3.0)
         self.assertEqual(self.model.atoms._coords[1, 0], 30.0)
+
+    def test_custom_threshold_is_used_for_initial_and_local_validation(self):
+        thresholds = []
+
+        def threshold_outliers(manager, residues, threshold=None):
+            thresholds.append(threshold)
+            if int(self.model.atoms._coords[0, 0]) == 0:
+                return self._outlier_objects(1)
+            return []
+
+        local_mdff._outliers_in_residues = threshold_outliers
+        report = local_mdff.optimize_sidechains_with_local_mdff(
+            self.session,
+            self.model,
+            self.volume,
+            outlier_threshold=0.01,
+            runner=self.runner,
+        )
+
+        self.assertEqual(report.outlier_threshold, 0.01)
+        self.assertEqual(thresholds, [0.01, 0.01])
 
 
 if __name__ == "__main__":

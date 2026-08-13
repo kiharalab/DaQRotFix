@@ -54,7 +54,8 @@ def _log_local_mdff_report(session, report):
     logger = session.logger
     logger.info(
         f"CorrectRotamer local MDFF: found {report.original_outlier_count} "
-        "original rotamer outlier(s)."
+        f"original rotamer outlier(s) at threshold "
+        f"{report.outlier_threshold:.6g}."
     )
     for result in report.residues:
         selected = result.selected
@@ -81,6 +82,7 @@ def correct_rotamers_mdff_cmd(
     radius=5.0,
     coordinate_updates=3,
     backbone_spring_constant=500.0,
+    outlier_threshold=None,
 ):
     report = optimize_sidechains_with_local_mdff(
         session,
@@ -90,6 +92,7 @@ def correct_rotamers_mdff_cmd(
         coordinate_updates=coordinate_updates,
         # Command value is in kJ mol-1 A-2; ISOLDE stores kJ mol-1 nm-2.
         backbone_spring_constant=backbone_spring_constant * 100.0,
+        outlier_threshold=outlier_threshold,
     )
     _log_local_mdff_report(session, report)
     return report
@@ -101,6 +104,7 @@ correct_rotamers_mdff_desc = CmdDesc(
         ("radius", FloatArg),
         ("coordinate_updates", IntArg),
         ("backbone_spring_constant", FloatArg),
+        ("outlier_threshold", FloatArg),
     ],
     synopsis="optimize rotamer outliers with probability-ordered local ISOLDE MDFF",
 )

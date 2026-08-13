@@ -33,23 +33,23 @@ from Qt.QtWidgets import (
     QWidget,
 )
 
-from .cmd import _log_report
-from .correction import correct_rotamer_outliers, residue_label
+from .correction import residue_label
 from .local_mdff import (
     DEFAULT_BACKBONE_SPRING_CONSTANT,
     DEFAULT_COORDINATE_UPDATES,
     DEFAULT_LOCAL_RADIUS,
+    DEFAULT_OUTLIER_THRESHOLD,
     optimize_sidechains_with_local_mdff,
 )
 
 
 def _bundle_version():
     if package_version is None:
-        return "0.3.0"
+        return "0.4.1"
     try:
         return package_version("ChimeraX-CorrectRotamer")
     except Exception:
-        return "0.3.0"
+        return "0.4.1"
 
 
 def _adaptive_ui_scale():
@@ -69,6 +69,46 @@ def _adaptive_ui_scale():
     return 1.0
 
 
+_CAMERA_ATTRIBUTES = (
+    "position",
+    "field_of_view",
+    "field_width",
+    "eye_separation_scene",
+    "eye_separation_pixels",
+)
+
+
+def _capture_view(session):
+    """Capture camera-only state without snapshotting model coordinates."""
+    view = session.main_view
+    camera = view.camera
+    camera_state = {}
+    for attribute in _CAMERA_ATTRIBUTES:
+        if hasattr(camera, attribute):
+            value = getattr(camera, attribute)
+            if attribute == "position":
+                value = value.copy()
+            camera_state[attribute] = value
+    return {
+        "camera": camera_state,
+        "clip_planes": [plane.copy() for plane in view.clip_planes.planes()],
+        "center_of_rotation": tuple(view.center_of_rotation),
+        "center_of_rotation_method": view.center_of_rotation_method,
+    }
+
+
+def _restore_view(session, state):
+    """Restore camera and clipping while leaving optimized coordinates intact."""
+    view = session.main_view
+    for attribute, value in state["camera"].items():
+        setattr(view.camera, attribute, value)
+    view.clip_planes.replace_planes(
+        [plane.copy() for plane in state["clip_planes"]]
+    )
+    view.center_of_rotation = state["center_of_rotation"]
+    view.center_of_rotation_method = state["center_of_rotation_method"]
+
+
 class CorrectRotamerTool(ToolInstance):
     SESSION_ENDURING = False
     SESSION_SAVE = False
@@ -77,8 +117,8 @@ class CorrectRotamerTool(ToolInstance):
     _HEADERS = (
         "Residue",
         "Selected Rotamer",
-        "Mean Density",
-        "Valid / Tested",
+        "Probability",
+        "Local Outliers",
         "Result",
     )
 
@@ -87,7 +127,7 @@ class CorrectRotamerTool(ToolInstance):
         self.display_name = "CorrectRotamer"
         self._running = False
         self._report = None
-        self._report_mode = "density"
+        self._threshold_initialized = False
 
         self.tool_window = MainToolWindow(self, close_destroys=True)
         self._build_ui()
@@ -129,6 +169,12 @@ class CorrectRotamerTool(ToolInstance):
         main_layout.setContentsMargins(sp(12), sp(10), sp(12), sp(12))
         main_layout.setSpacing(sp(8))
 
+        parameters_tab = QWidget(root)
+        parameters_tab.setProperty("section", "dark")
+        parameters_layout = QVBoxLayout(parameters_tab)
+        parameters_layout.setContentsMargins(sp(12), sp(10), sp(12), sp(12))
+        parameters_layout.setSpacing(sp(8))
+
         results_tab = QWidget(root)
         results_tab.setProperty("section", "dark")
         results_layout = QVBoxLayout(results_tab)
@@ -136,6 +182,7 @@ class CorrectRotamerTool(ToolInstance):
         results_layout.setSpacing(sp(8))
 
         self.tabs.addTab(main_tab, "MAIN")
+        self.tabs.addTab(parameters_tab, "PARAMETERS")
         self._results_tab_index = self.tabs.addTab(results_tab, "Residue Table")
 
         header_row = QHBoxLayout()
@@ -195,35 +242,8 @@ class CorrectRotamerTool(ToolInstance):
         mdff_layout.addLayout(mdff_row)
         main_layout.addWidget(mdff_card)
 
-        run_card, run_layout = self._make_card(root, "Rotamer Correction", sp)
-        explanation = QLabel(
-            "Tests every canonical target from the original coordinates and "
-            "selects the valid target with the highest mean side-chain density.",
-            root,
-        )
-        explanation.setWordWrap(True)
-        explanation.setProperty("role", "caption")
-        run_layout.addWidget(explanation)
-
-        self.run_button = QPushButton("Correct Rotamer Outliers", root)
-        self.run_button.setProperty("variant", "primary")
-        self.run_button.setMinimumWidth(sp(220, 160))
-        self.run_button.clicked.connect(self._run_density)
-        run_layout.addWidget(self.run_button, 0, Qt.AlignLeft)
-
-        self.progress = QProgressBar(root)
-        self.progress.setRange(0, 1)
-        self.progress.setValue(0)
-        run_layout.addWidget(self.progress)
-
-        self.run_status = QLabel("Ready", root)
-        self.run_status.setProperty("role", "caption")
-        self.run_status.setWordWrap(True)
-        run_layout.addWidget(self.run_status)
-        main_layout.addWidget(run_card)
-
         mdff_run_card, mdff_run_layout = self._make_card(
-            root, "Automated Local MDFF", sp
+            root, "Optimize Side Chains with Local MDFF", sp
         )
         mdff_explanation = QLabel(
             "Tries canonical rotamers in decreasing ISOLDE probability. Each "
@@ -235,41 +255,87 @@ class CorrectRotamerTool(ToolInstance):
         mdff_explanation.setProperty("role", "caption")
         mdff_run_layout.addWidget(mdff_explanation)
 
+        parameters_header = QLabel("Local MDFF Parameters", root)
+        parameters_header.setProperty("role", "title")
+        parameters_layout.addWidget(parameters_header)
+        parameters_caption = QLabel(
+            "These settings are applied to every canonical rotamer trial.", root
+        )
+        parameters_caption.setProperty("role", "caption")
+        parameters_layout.addWidget(parameters_caption)
+
+        parameters_card, parameters_card_layout = self._make_card(
+            root, "Optimization Settings", sp
+        )
         settings = QGridLayout()
         settings.setHorizontalSpacing(sp(10))
-        settings.setVerticalSpacing(sp(5))
+        settings.setVerticalSpacing(sp(10))
         settings.addWidget(QLabel("Local radius (Å)", root), 0, 0)
         self.local_radius = QDoubleSpinBox(root)
         self.local_radius.setRange(2.0, 12.0)
         self.local_radius.setSingleStep(0.5)
         self.local_radius.setValue(DEFAULT_LOCAL_RADIUS)
-        settings.addWidget(self.local_radius, 1, 0)
+        settings.addWidget(self.local_radius, 0, 1)
 
-        settings.addWidget(QLabel("MDFF coordinate updates", root), 0, 1)
+        settings.addWidget(QLabel("MDFF coordinate updates", root), 1, 0)
         self.coordinate_updates = QSpinBox(root)
         self.coordinate_updates.setRange(1, 20)
         self.coordinate_updates.setValue(DEFAULT_COORDINATE_UPDATES)
         settings.addWidget(self.coordinate_updates, 1, 1)
 
-        settings.addWidget(QLabel("Backbone restraint (kJ mol⁻¹ Å⁻²)", root), 0, 2)
+        settings.addWidget(QLabel("Backbone restraint (kJ mol⁻¹ Å⁻²)", root), 2, 0)
         self.backbone_spring = QDoubleSpinBox(root)
         self.backbone_spring.setRange(10.0, 1000.0)
         self.backbone_spring.setSingleStep(50.0)
         self.backbone_spring.setValue(DEFAULT_BACKBONE_SPRING_CONSTANT / 100.0)
-        settings.addWidget(self.backbone_spring, 1, 2)
-        mdff_run_layout.addLayout(settings)
+        settings.addWidget(self.backbone_spring, 2, 1)
+
+        settings.addWidget(QLabel("Outlier threshold (%)", root), 3, 0)
+        self.outlier_threshold = QDoubleSpinBox(root)
+        self.outlier_threshold.setDecimals(3)
+        self.outlier_threshold.setRange(0.001, 100.0)
+        self.outlier_threshold.setSingleStep(0.01)
+        self.outlier_threshold.setValue(DEFAULT_OUTLIER_THRESHOLD * 100.0)
+        self.outlier_threshold.setToolTip(
+            "A rotamer is an outlier when its ISOLDE P-value is below this percentage"
+        )
+        settings.addWidget(self.outlier_threshold, 3, 1)
+        settings.setColumnStretch(0, 1)
+        settings.setColumnStretch(1, 1)
+        parameters_card_layout.addLayout(settings)
+        parameters_layout.addWidget(parameters_card)
+
+        threshold_note = QLabel(
+            "Outliers are residues whose ISOLDE rotamer P-value is below the "
+            "selected percentage. The standard ISOLDE cutoff is normally 0.05%.",
+            root,
+        )
+        threshold_note.setProperty("role", "notice")
+        threshold_note.setWordWrap(True)
+        parameters_layout.addWidget(threshold_note)
+        parameters_layout.addStretch(1)
 
         self.local_mdff_button = QPushButton("Optimize Side Chains with Local MDFF", root)
         self.local_mdff_button.setProperty("variant", "primary")
         self.local_mdff_button.setMinimumWidth(sp(260, 190))
         self.local_mdff_button.clicked.connect(self._run_local_mdff)
         mdff_run_layout.addWidget(self.local_mdff_button, 0, Qt.AlignLeft)
+
+        self.progress = QProgressBar(root)
+        self.progress.setRange(0, 1)
+        self.progress.setValue(0)
+        mdff_run_layout.addWidget(self.progress)
+
+        self.run_status = QLabel("Ready", root)
+        self.run_status.setProperty("role", "caption")
+        self.run_status.setWordWrap(True)
+        mdff_run_layout.addWidget(self.run_status)
         main_layout.addWidget(mdff_run_card)
 
         notice = QLabel(
-            "The density-only button never starts ISOLDE. The Automated Local "
-            "MDFF button explicitly starts and stops short ISOLDE minimisations; "
-            "it restores rejected coordinates and temporary backbone restraints.",
+            "This workflow explicitly starts and stops short ISOLDE minimisations. "
+            "Each active local region is focused automatically; rejected coordinates "
+            "and temporary backbone restraints are restored.",
             root,
         )
         notice.setProperty("role", "notice")
@@ -360,8 +426,8 @@ class CorrectRotamerTool(ToolInstance):
             QTabBar::tab:hover {{ background: rgba(255, 255, 255, 0.10); }}
             QFrame[card="dark"] {{ background: #1d1d1f; border: none; border-radius: 10px; }}
             QLabel {{ background: transparent; color: inherit; }}
-            QLabel[role="title"] {{ font-size: 20px; font-weight: 600; }}
-            QLabel[role="field-label"] {{ font-size: 13px; font-weight: 600; }}
+            QLabel[role="title"] {{ color: #ffffff; font-size: 20px; font-weight: 600; }}
+            QLabel[role="field-label"] {{ color: #ffffff; font-size: 13px; font-weight: 600; }}
             QLabel[role="caption"] {{ font-size: 12px; color: rgba(255,255,255,0.72); }}
             QLabel[role="version-badge"] {{
                 color: rgba(255,255,255,0.78); background: rgba(255,255,255,0.10);
@@ -396,6 +462,14 @@ class CorrectRotamerTool(ToolInstance):
                 background: #272729; color: #ffffff; border: none;
                 border-radius: {sp(12, 8)}px; padding: {sp(6, 4)}px {sp(10, 7)}px;
                 min-height: {sp(22, 18)}px; selection-background-color: #0071e3;
+            }}
+            QSpinBox QLineEdit, QDoubleSpinBox QLineEdit {{
+                background: transparent; color: #ffffff;
+                selection-background-color: #0071e3; selection-color: #ffffff;
+            }}
+            QComboBox QAbstractItemView {{
+                background: #272729; color: #ffffff; border: 1px solid #4a4a4d;
+                selection-background-color: #0071e3; selection-color: #ffffff;
             }}
             QComboBox::drop-down {{ border: 0px; width: 24px; }}
             QPushButton {{
@@ -433,6 +507,10 @@ class CorrectRotamerTool(ToolInstance):
                 background: #1d1d1f; color: #ffffff; border: none;
                 border-right: 1px solid #3a3a3d; border-bottom: 1px solid #3a3a3d;
                 padding: 8px 10px; font-size: 13px; font-weight: 600;
+            }}
+            QTableCornerButton::section {{
+                background: #1d1d1f; border: none;
+                border-right: 1px solid #3a3a3d; border-bottom: 1px solid #3a3a3d;
             }}
             QPlainTextEdit {{
                 background: #111113; color: #ffffff; border: 1px solid #2f2f32;
@@ -477,7 +555,22 @@ class CorrectRotamerTool(ToolInstance):
         self.structure_menu.blockSignals(False)
         self.volume_menu.blockSignals(False)
         self._choose_matching_map()
+        self._initialize_outlier_threshold()
         self._update_readiness()
+
+    def _initialize_outlier_threshold(self):
+        if self._threshold_initialized:
+            return
+        try:
+            from chimerax.isolde import session_extensions
+
+            rotamer_mgr = session_extensions.get_rotamer_mgr(self.session)
+            cutoff = float(rotamer_mgr.cutoffs[1])
+        except Exception:
+            return
+        if 0.0 < cutoff <= 1.0:
+            self.outlier_threshold.setValue(cutoff * 100.0)
+            self._threshold_initialized = True
 
     @staticmethod
     def _restore_choice(menu, model):
@@ -535,106 +628,35 @@ class CorrectRotamerTool(ToolInstance):
             self._set_status_badge(
                 "Open and select both a structure and a density map.", "warning"
             )
-            ready = False
+            local_ready = False
         elif isolde is not None and isolde.simulation_running:
             self._set_status_badge(
                 "An ISOLDE simulation is active. Stop it before changing coordinates.",
                 "error",
             )
-            ready = False
+            local_ready = False
         elif self._current_mdff_mgr() is None:
             self._set_status_badge(
                 "No existing MDFF manager for this model/map pair.", "error"
             )
-            ready = False
+            local_ready = False
+        elif isolde is None:
+            self._set_status_badge(
+                "Open ISOLDE before starting automated local MDFF.", "warning"
+            )
+            local_ready = False
+        elif not bool(getattr(self._current_mdff_mgr(), "enabled", False)):
+            self._set_status_badge(
+                "Enable this map's existing ISOLDE MDFF potential.", "warning"
+            )
+            local_ready = False
         else:
-            mdff_mgr = self._current_mdff_mgr()
-            if isolde is None:
-                text = (
-                    "Ready for density scoring. Open ISOLDE to enable automated "
-                    "local MDFF."
-                )
-                state = "warning"
-            elif not bool(getattr(mdff_mgr, "enabled", False)):
-                text = (
-                    "Ready for density scoring. Enable this map's ISOLDE MDFF "
-                    "potential for local optimization."
-                )
-                state = "warning"
-            else:
-                text = "Existing enabled MDFF manager found. Both workflows are ready."
-                state = "ready"
-            self._set_status_badge(text, state)
-            ready = True
-        self.run_button.setEnabled(ready and not self._running)
-        mdff_mgr = self._current_mdff_mgr() if ready else None
-        local_ready = (
-            ready
-            and isolde is not None
-            and bool(getattr(mdff_mgr, "enabled", False))
-        )
+            self._set_status_badge(
+                "Existing enabled MDFF manager found. Ready for local optimization.",
+                "ready",
+            )
+            local_ready = True
         self.local_mdff_button.setEnabled(local_ready and not self._running)
-
-    def _progress_update(self, stage, completed, total, residue, result):
-        self.progress.setRange(0, max(1, total))
-        self.progress.setValue(completed)
-        if stage == "enumerating":
-            if residue is None:
-                self.run_status.setText(
-                    f"Found {total} original outlier(s). Testing canonical targets…"
-                )
-            else:
-                action = "corrected" if result.corrected else "unchanged"
-                self.run_status.setText(
-                    f"{residue_label(residue)}: {action} ({completed}/{total})"
-                )
-        elif stage == "complete":
-            self.run_status.setText(
-                "Correction complete. ISOLDE simulation was not started."
-            )
-        QApplication.processEvents()
-
-    def _run_density(self):
-        structure = self.structure_menu.currentData()
-        volume = self.volume_menu.currentData()
-        if structure is None or volume is None:
-            QMessageBox.warning(
-                self.tool_window.ui_area,
-                "CorrectRotamer",
-                "Choose both a structure and a density map.",
-            )
-            return
-
-        self._running = True
-        self.run_button.setEnabled(False)
-        self.results_table.setRowCount(0)
-        self.candidate_details.clear()
-        self.summary.setText("Correction in progress…")
-        self.progress.setRange(0, 0)
-        self.run_status.setText("Finding original rotamer outliers…")
-        QApplication.processEvents()
-        try:
-            report = correct_rotamer_outliers(
-                self.session,
-                structure,
-                volume,
-                progress_callback=self._progress_update,
-            )
-            self._report = report
-            self._report_mode = "density"
-            self._populate_results(report)
-            _log_report(self.session, report)
-            self.tabs.setCurrentIndex(self._results_tab_index)
-        except (UserError, RuntimeError, ValueError) as error:
-            self.run_status.setText("Correction failed.")
-            self.summary.setText(str(error))
-            self.session.logger.error(str(error))
-            QMessageBox.critical(
-                self.tool_window.ui_area, "CorrectRotamer", str(error)
-            )
-        finally:
-            self._running = False
-            self._update_readiness()
 
     def _local_mdff_progress(self, stage, completed, total, residue, detail, extra):
         self.progress.setRange(0, max(1, total))
@@ -680,7 +702,7 @@ class CorrectRotamerTool(ToolInstance):
             return
 
         self._running = True
-        self.run_button.setEnabled(False)
+        initial_view = _capture_view(self.session)
         self.local_mdff_button.setEnabled(False)
         self.results_table.setRowCount(0)
         self.candidate_details.clear()
@@ -689,18 +711,22 @@ class CorrectRotamerTool(ToolInstance):
         self.run_status.setText("Finding original rotamer outliers…")
         QApplication.processEvents()
         try:
-            report = optimize_sidechains_with_local_mdff(
-                self.session,
-                structure,
-                volume,
-                local_radius=self.local_radius.value(),
-                coordinate_updates=self.coordinate_updates.value(),
-                # GUI is expressed per A^2; ISOLDE stores per nm^2.
-                backbone_spring_constant=self.backbone_spring.value() * 100.0,
-                progress_callback=self._local_mdff_progress,
-            )
+            try:
+                report = optimize_sidechains_with_local_mdff(
+                    self.session,
+                    structure,
+                    volume,
+                    local_radius=self.local_radius.value(),
+                    coordinate_updates=self.coordinate_updates.value(),
+                    # GUI is expressed per A^2; ISOLDE stores per nm^2.
+                    backbone_spring_constant=self.backbone_spring.value() * 100.0,
+                    # GUI is percentage; the validator returns a 0..1 P-value.
+                    outlier_threshold=self.outlier_threshold.value() / 100.0,
+                    progress_callback=self._local_mdff_progress,
+                )
+            finally:
+                _restore_view(self.session, initial_view)
             self._report = report
-            self._report_mode = "local_mdff"
             self._populate_local_mdff_results(report)
             self._log_local_mdff_report(report)
             self.tabs.setCurrentIndex(self._results_tab_index)
@@ -714,38 +740,6 @@ class CorrectRotamerTool(ToolInstance):
         finally:
             self._running = False
             self._update_readiness()
-
-    def _populate_results(self, report):
-        self.results_table.setHorizontalHeaderLabels(self._HEADERS)
-        self.results_table.setSortingEnabled(False)
-        self.results_table.setRowCount(len(report.residues))
-        for row, result in enumerate(report.residues):
-            selected = result.selected
-            valid_count = sum(candidate.valid for candidate in result.candidates)
-            values = (
-                residue_label(result.residue),
-                selected.target_name if selected else "—",
-                f"{selected.density_score:.6g}" if selected else "—",
-                f"{valid_count} / {len(result.candidates)}",
-                "Corrected" if selected else "Unchanged — no valid in-map target",
-            )
-            for column, value in enumerate(values):
-                item = QTableWidgetItem(value)
-                item.setData(Qt.UserRole, result)
-                if column in (2, 3):
-                    item.setTextAlignment(int(Qt.AlignRight | Qt.AlignVCenter))
-                self.results_table.setItem(row, column, item)
-        self.results_table.setSortingEnabled(True)
-        self.summary.setText(
-            f"Corrected {report.corrected_count} of "
-            f"{report.original_outlier_count} original rotamer outlier(s). "
-            "ISOLDE was not started or modified."
-        )
-        if report.residues:
-            self.results_table.selectRow(0)
-            self._show_candidate_details(report.residues[0])
-        else:
-            self.candidate_details.setPlainText("No original rotamer outliers were found.")
 
     def _populate_local_mdff_results(self, report):
         self.results_table.setHorizontalHeaderLabels(
@@ -782,7 +776,8 @@ class CorrectRotamerTool(ToolInstance):
         self.summary.setText(
             f"Optimized {report.corrected_count} of "
             f"{report.original_outlier_count} original rotamer outlier(s) "
-            "using probability-ordered local ISOLDE MDFF trials."
+            f"using probability-ordered local ISOLDE MDFF trials "
+            f"(outlier threshold {report.outlier_threshold * 100.0:.3g}%)."
         )
         if report.residues:
             self.results_table.selectRow(0)
@@ -794,7 +789,8 @@ class CorrectRotamerTool(ToolInstance):
         logger = self.session.logger
         logger.info(
             f"CorrectRotamer local MDFF: found {report.original_outlier_count} "
-            "original rotamer outlier(s)."
+            f"original rotamer outlier(s) at threshold "
+            f"{report.outlier_threshold * 100.0:.3g}%."
         )
         for result in report.residues:
             selected = result.selected
@@ -814,10 +810,7 @@ class CorrectRotamerTool(ToolInstance):
         result = item.data(Qt.UserRole)
         if result is None:
             return
-        if self._report_mode == "local_mdff":
-            self._show_local_mdff_details(result)
-        else:
-            self._show_candidate_details(result)
+        self._show_local_mdff_details(result)
         residue = result.residue
         if getattr(residue, "deleted", False):
             return
@@ -829,25 +822,6 @@ class CorrectRotamerTool(ToolInstance):
             run(self.session, "view sel", log=False)
         except UserError:
             pass
-
-    def _show_candidate_details(self, result):
-        selected_index = (
-            result.selected.target_index if result.selected is not None else None
-        )
-        lines = []
-        for candidate in result.candidates:
-            marker = "★" if candidate.target_index == selected_index else " "
-            if candidate.valid:
-                lines.append(
-                    f"{marker} {candidate.target_name}: "
-                    f"mean density {candidate.density_score:.6g}"
-                )
-            else:
-                lines.append(
-                    f"{marker} {candidate.target_name}: rejected — "
-                    f"{candidate.rejection_reason}"
-                )
-        self.candidate_details.setPlainText("\n".join(lines))
 
     def _show_local_mdff_details(self, result):
         selected_index = (

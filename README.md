@@ -1,7 +1,7 @@
 # CorrectRotamer for ChimeraX
 
-CorrectRotamer is a ChimeraX bundle for automatic density-guided and local-MDFF
-optimization of ISOLDE rotamer outliers.
+CorrectRotamer is a ChimeraX bundle for automated local-MDFF optimization of
+ISOLDE rotamer outliers.
 
 It provides two deliberately separate workflows.
 
@@ -48,13 +48,16 @@ correctrotamers #1 #2
 The local-MDFF workflow is also available as:
 
 ```text
-correctrotamers mdff #1 #2 radius 5 coordinateUpdates 3 backboneSpringConstant 500
+correctrotamers mdff #1 #2 radius 5 coordinateUpdates 3 backboneSpringConstant 500 outlierThreshold 0.0005
 ```
 
-The graphical tool provides separate buttons for density-only correction and
-automated local MDFF. The latter has controls for local radius, MDFF coordinate
-updates and backbone restraint strength, and always asks for confirmation
-before starting ISOLDE simulations.
+The graphical tool uses **Optimize Side Chains with Local MDFF** as its standard
+workflow. Its separate **PARAMETERS** tab contains controls for local radius,
+MDFF coordinate updates, backbone restraint strength and the rotamer-outlier
+threshold. The threshold is shown as a percentage (ISOLDE's default is 0.05%).
+The current local region is focused automatically during every MDFF trial, and
+the original camera view is restored after the complete run. The tool always
+asks for confirmation before starting ISOLDE simulations.
 
 Here `#1` is an atomic structure and `#2` is the density map already associated
 with that structure in ISOLDE.

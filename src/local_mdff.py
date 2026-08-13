@@ -16,6 +16,7 @@ from .correction import (
 DEFAULT_LOCAL_RADIUS = 5.0
 DEFAULT_COORDINATE_UPDATES = 3
 DEFAULT_MAX_ITERATIONS_PER_UPDATE = 100
+DEFAULT_OUTLIER_THRESHOLD = 0.0005
 # ISOLDE/OpenMM stores position-restraint k in kJ mol-1 nm-2. This is
 # equivalent to 500 kJ mol-1 A-2 and keeps the backbone nearly fixed.
 DEFAULT_BACKBONE_SPRING_CONSTANT = 50000.0
@@ -52,6 +53,7 @@ class LocalMDFFResidueResult:
 class LocalMDFFReport:
     original_outlier_count: int
     residues: List[LocalMDFFResidueResult]
+    outlier_threshold: float
 
     @property
     def corrected_count(self):
@@ -100,10 +102,16 @@ def _local_protein_residues(residue, radius):
     return Residues(unique)
 
 
-def _outliers_in_residues(rotamer_mgr, residues):
+def _outliers_in_residues(rotamer_mgr, residues, outlier_threshold=None):
     rotamers = rotamer_mgr.get_rotamers(residues)
-    outliers, _scores = rotamer_mgr.outliers(rotamers)
-    return list(outliers)
+    if outlier_threshold is None:
+        outlier_threshold = float(rotamer_mgr.cutoffs[1])
+    scores = rotamer_mgr.validate_rotamers(rotamers)
+    return [
+        rotamer
+        for rotamer, score in zip(rotamers, scores)
+        if 0.0 <= float(score) < float(outlier_threshold)
+    ]
 
 
 class IsoldeLocalMDFFRunner:
@@ -220,6 +228,11 @@ class IsoldeLocalMDFFRunner:
 
             self.session.selection.clear()
             local_residues.atoms.selected = True
+            # Show the exact mobile region while its candidate is minimized.
+            # The camera intentionally remains there so progress is visible.
+            from chimerax.core.commands import run
+
+            run(self.session, "view sel", log=False)
             # The local residues have already been chosen explicitly. Prevent
             # ISOLDE from expanding the mobile set a second time; its hard
             # shell remains available as fixed physical context.
@@ -318,6 +331,7 @@ def optimize_sidechains_with_local_mdff(
     local_radius=DEFAULT_LOCAL_RADIUS,
     coordinate_updates=DEFAULT_COORDINATE_UPDATES,
     backbone_spring_constant=DEFAULT_BACKBONE_SPRING_CONSTANT,
+    outlier_threshold=None,
     progress_callback=None,
     runner=None,
 ):
@@ -344,8 +358,15 @@ def optimize_sidechains_with_local_mdff(
         )
 
     rotamer_mgr = session_extensions.get_rotamer_mgr(session)
-    original_outliers, _scores = rotamer_mgr.outliers(
-        rotamer_mgr.get_rotamers(model.residues)
+    if outlier_threshold is None:
+        outlier_threshold = float(rotamer_mgr.cutoffs[1])
+    outlier_threshold = float(outlier_threshold)
+    if not 0.0 < outlier_threshold <= 1.0:
+        raise UserError(
+            "The rotamer outlier threshold must be greater than 0 and at most 1."
+        )
+    original_outliers = _outliers_in_residues(
+        rotamer_mgr, model.residues, outlier_threshold
     )
     original_residues = [rotamer.residue for rotamer in original_outliers]
     total = len(original_residues)
@@ -395,7 +416,7 @@ def optimize_sidechains_with_local_mdff(
                     density = mean_sidechain_density(model, residue, volume)
                     runner.run(local_residues)
                     local_outliers = _outliers_in_residues(
-                        rotamer_mgr, local_residues
+                        rotamer_mgr, local_residues, outlier_threshold
                     )
                     labels = tuple(
                         residue_label(outlier.residue) for outlier in local_outliers
@@ -443,7 +464,7 @@ def optimize_sidechains_with_local_mdff(
                 "residue", residue_index, total, residue, result, None
             )
 
-    report = LocalMDFFReport(total, results)
+    report = LocalMDFFReport(total, results, outlier_threshold)
     if progress_callback is not None:
         progress_callback("complete", total, total, None, report, None)
     return report
