@@ -21,14 +21,16 @@ an ISOLDE simulation and does not create or modify position restraints.
 This explicit workflow snapshots the original outlier list, then handles each
 residue in turn. Canonical rotamers are tried in decreasing ISOLDE `Frequency`
 order. Each candidate starts from the coordinates accepted before that
-residue, receives a short local ISOLDE MDFF minimization, and is scored by the
-number of rotamer outliers in the local protein region.
+residue, receives local ISOLDE MDFF annealing followed by final minimization,
+and is scored by the number of rotamer outliers in the local protein region.
 
-The first candidate with zero local outliers is accepted. If all candidates
-leave outliers, the candidate with the fewest is retained; probability order
-breaks ties. Rejected local-MDFF coordinates are restored. Protein backbone
-N, CA, C and O atoms are strongly and temporarily position-restrained while
-side-chain atoms remain mobile.
+A candidate is accepted only if the target residue is no longer an outlier,
+the total local outlier count decreases, and no previously sound neighboring
+residue becomes a new outlier. The first candidate meeting all three conditions
+is retained in probability order. If none qualifies, the residue remains at
+its pre-trial coordinates. Rejected local-MDFF coordinates are restored.
+Protein backbone N, CA, C and O atoms are strongly and temporarily
+position-restrained while side-chain atoms remain mobile.
 
 ## Install
 
@@ -39,7 +41,7 @@ devel install /path/to/CorrectRotamer
 ```
 
 Restart ChimeraX after the first installation if the tool is not immediately
-listed. Open **Tools → Validation → Correct Rotamers**, or run:
+listed. Open **Tools → Validation → Rotamer Optimizer**, or run:
 
 ```text
 correctrotamers #1 #2
@@ -48,13 +50,17 @@ correctrotamers #1 #2
 The local-MDFF workflow is also available as:
 
 ```text
-correctrotamers mdff #1 #2 radius 5 coordinateUpdates 3 backboneSpringConstant 500 outlierThreshold 0.0005
+correctrotamers mdff #1 #2 radius 5 initialTemperature 20 annealingUpdates 20 finalTemperature 5 finalMinimizationUpdates 20 backboneSpringConstant 500 outlierThreshold 0.0005
 ```
 
 The graphical tool uses **Optimize Side Chains with Local MDFF** as its standard
 workflow. Its separate **PARAMETERS** tab contains controls for local radius,
-MDFF coordinate updates, backbone restraint strength and the rotamer-outlier
-threshold. The threshold is shown as a percentage (ISOLDE's default is 0.05%).
+initial temperature, annealing coordinate updates, final temperature, final
+minimization coordinate updates, backbone restraint strength and the
+rotamer-outlier threshold. The default cooling schedule is 20 K to 5 K over
+20 coordinate updates, followed by 20 minimization coordinate updates. Both
+update controls accept values from 1 to 100. The threshold is shown as a
+percentage (ISOLDE's default is 0.05%).
 The current local region is focused automatically during every MDFF trial, and
 the original camera view is restored after the complete run. The tool always
 asks for confirmation before starting ISOLDE simulations.
@@ -88,6 +94,9 @@ ISOLDE is already open.
   physical context shell.
 - Backbone N, CA, C and O restraints are temporary and their prior settings
   are restored after every trial.
+- Trajectory smoothing is disabled during automated annealing. The user's
+  original temperature and smoothing settings are restored after every trial.
+- Candidate acceptance is assessed only after cooling and final minimization.
 - Side chains are not position-restrained by this bundle.
 - The selected map must have an existing, enabled MDFF manager. The workflow
   does not create or enable one.

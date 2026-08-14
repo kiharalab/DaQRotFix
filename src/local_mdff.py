@@ -14,7 +14,12 @@ from .correction import (
 
 
 DEFAULT_LOCAL_RADIUS = 5.0
-DEFAULT_COORDINATE_UPDATES = 3
+DEFAULT_INITIAL_TEMPERATURE = 20.0
+DEFAULT_ANNEALING_UPDATES = 20
+DEFAULT_FINAL_TEMPERATURE = 5.0
+DEFAULT_FINAL_MINIMIZATION_UPDATES = 20
+# Backwards-compatible name used by older scripts and command invocations.
+DEFAULT_COORDINATE_UPDATES = DEFAULT_FINAL_MINIMIZATION_UPDATES
 DEFAULT_MAX_ITERATIONS_PER_UPDATE = 100
 DEFAULT_OUTLIER_THRESHOLD = 0.0005
 # ISOLDE/OpenMM stores position-restraint k in kJ mol-1 nm-2. This is
@@ -31,6 +36,8 @@ class LocalMDFFCandidate:
     target_is_outlier: Optional[bool] = None
     density_score: Optional[float] = None
     outlier_labels: tuple = ()
+    new_outlier_labels: tuple = ()
+    selection_reason: Optional[str] = None
     rejection_reason: Optional[str] = None
 
     @property
@@ -43,10 +50,13 @@ class LocalMDFFResidueResult:
     residue: object
     candidates: List[LocalMDFFCandidate] = field(default_factory=list)
     selected: Optional[LocalMDFFCandidate] = None
+    baseline_local_outlier_count: Optional[int] = None
+    baseline_outlier_labels: tuple = ()
+    resolved_before_trial: bool = False
 
     @property
     def corrected(self):
-        return self.selected is not None
+        return self.selected is not None or self.resolved_before_trial
 
 
 @dataclass
@@ -75,6 +85,18 @@ def probability_ordered_targets(rotamer):
         targets,
         key=lambda item: (-target_probability(item[1]), item[0]),
     )
+
+
+def annealing_temperature(initial, final, update_index, update_count):
+    """Return the linear annealing temperature for a zero-based MD update."""
+    initial = float(initial)
+    final = float(final)
+    update_count = max(1, int(update_count))
+    if update_count == 1:
+        return initial
+    index = min(max(0, int(update_index)), update_count - 1)
+    fraction = index / float(update_count - 1)
+    return initial + (final - initial) * fraction
 
 
 def _local_protein_residues(residue, radius):
@@ -115,7 +137,7 @@ def _outliers_in_residues(rotamer_mgr, residues, outlier_threshold=None):
 
 
 class IsoldeLocalMDFFRunner:
-    """Run one short, explicitly requested local ISOLDE minimisation."""
+    """Run local ISOLDE MDFF annealing followed by energy minimisation."""
 
     def __init__(
         self,
@@ -123,7 +145,11 @@ class IsoldeLocalMDFFRunner:
         model,
         volume,
         *,
-        coordinate_updates=DEFAULT_COORDINATE_UPDATES,
+        initial_temperature=DEFAULT_INITIAL_TEMPERATURE,
+        annealing_updates=DEFAULT_ANNEALING_UPDATES,
+        final_temperature=DEFAULT_FINAL_TEMPERATURE,
+        final_minimization_updates=None,
+        coordinate_updates=None,
         max_iterations_per_update=DEFAULT_MAX_ITERATIONS_PER_UPDATE,
         backbone_spring_constant=DEFAULT_BACKBONE_SPRING_CONSTANT,
         timeout_ms=180000,
@@ -131,7 +157,26 @@ class IsoldeLocalMDFFRunner:
         self.session = session
         self.model = model
         self.volume = volume
-        self.coordinate_updates = max(1, int(coordinate_updates))
+        self.initial_temperature = float(initial_temperature)
+        self.annealing_updates = max(1, int(annealing_updates))
+        self.final_temperature = float(final_temperature)
+        if self.initial_temperature < 0 or self.final_temperature < 0:
+            raise ValueError("Annealing temperatures cannot be negative.")
+        if self.final_temperature > self.initial_temperature:
+            raise ValueError(
+                "Final temperature must not exceed the initial temperature."
+            )
+        if final_minimization_updates is None:
+            final_minimization_updates = (
+                coordinate_updates
+                if coordinate_updates is not None
+                else DEFAULT_FINAL_MINIMIZATION_UPDATES
+            )
+        self.final_minimization_updates = max(
+            1, int(final_minimization_updates)
+        )
+        # Preserve the former public attribute for compatibility.
+        self.coordinate_updates = self.final_minimization_updates
         self.max_iterations_per_update = max(1, int(max_iterations_per_update))
         self.backbone_spring_constant = float(backbone_spring_constant)
         self.timeout_ms = int(timeout_ms)
@@ -205,6 +250,8 @@ class IsoldeLocalMDFFRunner:
         old_padding = isolde.params.num_selection_padding_residues
         old_soft_shell = isolde.params.soft_shell_cutoff_distance
         old_max_iterations = isolde.sim_params.minimization_max_iterations
+        old_temperature = isolde.sim_params.temperature
+        old_smoothing = isolde.sim_params.trajectory_smoothing
         backbone = self._backbone_atoms(local_residues)
         restraint_mgr = session_extensions.get_position_restraint_mgr(self.model)
         saved_restraints = self._save_restraints(restraint_mgr, backbone)
@@ -243,6 +290,10 @@ class IsoldeLocalMDFFRunner:
             isolde.sim_params.minimization_max_iterations = (
                 self.max_iterations_per_update
             )
+            # Automated annealing must be evaluated from physical coordinates,
+            # not the running-average coordinates used for display smoothing.
+            isolde.sim_params.trajectory_smoothing = False
+            isolde.sim_params.temperature = self.initial_temperature
 
             restraints = restraint_mgr.add_restraints(backbone)
             restraints.targets = restraints.atoms.coords
@@ -252,7 +303,7 @@ class IsoldeLocalMDFFRunner:
             loop = QEventLoop()
             timer = QTimer()
             timer.setSingleShot(True)
-            updates = {"count": 0}
+            phase = {"name": "annealing", "annealing": 0, "minimization": 0}
 
             def simulation_terminated(*_):
                 nonlocal stopped
@@ -261,8 +312,37 @@ class IsoldeLocalMDFFRunner:
                 return DEREGISTER
 
             def coordinate_updated(*_):
-                updates["count"] += 1
-                if updates["count"] >= self.coordinate_updates:
+                thread_handler = sim_handler.thread_handler
+                last_mode = getattr(thread_handler, "_last_mode", None)
+                if phase["name"] == "annealing":
+                    # ISOLDE performs any required startup/clash minimisation
+                    # before entering dynamics. Do not count those updates as
+                    # part of the requested annealing schedule.
+                    if last_mode != "equil":
+                        return
+                    phase["annealing"] += 1
+                    completed = phase["annealing"]
+                    if completed >= self.annealing_updates:
+                        isolde.sim_params.temperature = self.final_temperature
+                        sim_handler.minimize = True
+                        phase["name"] = "minimization"
+                    else:
+                        next_temperature = annealing_temperature(
+                            self.initial_temperature,
+                            self.final_temperature,
+                            completed,
+                            self.annealing_updates,
+                        )
+                        isolde.sim_params.temperature = next_temperature
+                    return
+
+                if last_mode != "min":
+                    return
+                phase["minimization"] += 1
+                if (
+                    phase["minimization"]
+                    >= self.final_minimization_updates
+                ):
                     isolde.commit_sim()
                     return DEREGISTER
 
@@ -282,11 +362,10 @@ class IsoldeLocalMDFFRunner:
             if not isolde.simulation_running:
                 raise RuntimeError("ISOLDE did not start the requested local simulation")
             sim_handler = isolde.sim_handler
-            # Keep the short run in minimisation mode. Setting the documented
-            # SimHandler flag avoids Isolde.minimize() in ISOLDE 1.11.1, whose
-            # implementation calls a GUI callback that is not present on the
-            # Isolde object. MDFF remains an ISOLDE-configured active force.
-            sim_handler.minimize = True
+            # Request equilibration after ISOLDE's mandatory startup
+            # stabilisation. The coordinate-update callback switches to final
+            # minimisation after the requested cooling schedule.
+            sim_handler.minimize = False
             handler = sim_handler.triggers.add_handler(
                 "coord update", coordinate_updated
             )
@@ -315,6 +394,8 @@ class IsoldeLocalMDFFRunner:
             isolde.params.num_selection_padding_residues = old_padding
             isolde.params.soft_shell_cutoff_distance = old_soft_shell
             isolde.sim_params.minimization_max_iterations = old_max_iterations
+            isolde.sim_params.temperature = old_temperature
+            isolde.sim_params.trajectory_smoothing = old_smoothing
             if isolde.selected_model is not previous_model:
                 isolde.change_selected_model(previous_model)
             for structure, atom_selection, bond_selection in selection_snapshots:
@@ -329,7 +410,11 @@ def optimize_sidechains_with_local_mdff(
     volume,
     *,
     local_radius=DEFAULT_LOCAL_RADIUS,
-    coordinate_updates=DEFAULT_COORDINATE_UPDATES,
+    initial_temperature=DEFAULT_INITIAL_TEMPERATURE,
+    annealing_updates=DEFAULT_ANNEALING_UPDATES,
+    final_temperature=DEFAULT_FINAL_TEMPERATURE,
+    final_minimization_updates=None,
+    coordinate_updates=None,
     backbone_spring_constant=DEFAULT_BACKBONE_SPRING_CONSTANT,
     outlier_threshold=None,
     progress_callback=None,
@@ -339,9 +424,10 @@ def optimize_sidechains_with_local_mdff(
 
     The original outlier list is snapshotted once. For each residue, every
     candidate starts from the coordinates accepted for all preceding residues.
-    The first candidate producing zero local rotamer outliers is accepted. If
-    none reaches zero, the completed candidate with the fewest local outliers
-    is retained; probability order is the deterministic tie-breaker.
+    A candidate is accepted only when the target residue is no longer an
+    outlier, no new neighboring outliers are created, and the total local
+    outlier count decreases. Probability order determines which qualifying
+    candidate is accepted first. If none qualifies, coordinates stay unchanged.
     """
     from chimerax.core.errors import UserError
     from chimerax.isolde import session_extensions
@@ -375,6 +461,10 @@ def optimize_sidechains_with_local_mdff(
             session,
             model,
             volume,
+            initial_temperature=initial_temperature,
+            annealing_updates=annealing_updates,
+            final_temperature=final_temperature,
+            final_minimization_updates=final_minimization_updates,
             coordinate_updates=coordinate_updates,
             backbone_spring_constant=backbone_spring_constant,
         )
@@ -392,9 +482,28 @@ def optimize_sidechains_with_local_mdff(
             continue
 
         local_residues = _local_protein_residues(residue, local_radius)
+        baseline_outliers = _outliers_in_residues(
+            rotamer_mgr, local_residues, outlier_threshold
+        )
+        baseline_outlier_residues = [
+            outlier.residue for outlier in baseline_outliers
+        ]
+        baseline_ids = {id(r) for r in baseline_outlier_residues}
+        result.baseline_local_outlier_count = len(baseline_outliers)
+        result.baseline_outlier_labels = tuple(
+            residue_label(r) for r in baseline_outlier_residues
+        )
+        if id(residue) not in baseline_ids:
+            result.resolved_before_trial = True
+            if progress_callback is not None:
+                progress_callback(
+                    "residue", residue_index, total, residue, result, None
+                )
+            continue
+
         baseline_coords = numpy.array(model.atoms.coords, copy=True)
-        best_coords = None
-        best_candidate = None
+        selected_coords = None
+        selected_candidate = None
 
         try:
             targets = probability_ordered_targets(rotamer)
@@ -422,8 +531,25 @@ def optimize_sidechains_with_local_mdff(
                         residue_label(outlier.residue) for outlier in local_outliers
                     )
                     target_is_outlier = any(
-                        outlier.residue is residue for outlier in local_outliers
+                        id(outlier.residue) == id(residue)
+                        for outlier in local_outliers
                     )
+                    new_outlier_labels = tuple(
+                        residue_label(outlier.residue)
+                        for outlier in local_outliers
+                        if id(outlier.residue) not in baseline_ids
+                    )
+                    if target_is_outlier:
+                        selection_reason = "target residue remains an outlier"
+                    elif new_outlier_labels:
+                        selection_reason = (
+                            "created new neighboring outlier(s): "
+                            + ", ".join(new_outlier_labels)
+                        )
+                    elif len(local_outliers) >= len(baseline_outliers):
+                        selection_reason = "local outlier count did not decrease"
+                    else:
+                        selection_reason = None
                     candidate = LocalMDFFCandidate(
                         target_index,
                         name,
@@ -432,17 +558,14 @@ def optimize_sidechains_with_local_mdff(
                         target_is_outlier=target_is_outlier,
                         density_score=density,
                         outlier_labels=labels,
+                        new_outlier_labels=new_outlier_labels,
+                        selection_reason=selection_reason,
                     )
                     result.candidates.append(candidate)
 
-                    if (
-                        best_candidate is None
-                        or candidate.local_outlier_count
-                        < best_candidate.local_outlier_count
-                    ):
-                        best_candidate = candidate
-                        best_coords = numpy.array(model.atoms.coords, copy=True)
-                    if candidate.local_outlier_count == 0:
+                    if selection_reason is None:
+                        selected_candidate = candidate
+                        selected_coords = numpy.array(model.atoms.coords, copy=True)
                         break
                 except Exception as error:
                     result.candidates.append(
@@ -456,9 +579,9 @@ def optimize_sidechains_with_local_mdff(
         finally:
             model.atoms.coords = baseline_coords
 
-        if best_candidate is not None and best_coords is not None:
-            model.atoms.coords = best_coords
-            result.selected = best_candidate
+        if selected_candidate is not None and selected_coords is not None:
+            model.atoms.coords = selected_coords
+            result.selected = selected_candidate
         if progress_callback is not None:
             progress_callback(
                 "residue", residue_index, total, residue, result, None

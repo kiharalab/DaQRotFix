@@ -35,8 +35,11 @@ from Qt.QtWidgets import (
 
 from .correction import residue_label
 from .local_mdff import (
+    DEFAULT_ANNEALING_UPDATES,
     DEFAULT_BACKBONE_SPRING_CONSTANT,
-    DEFAULT_COORDINATE_UPDATES,
+    DEFAULT_FINAL_MINIMIZATION_UPDATES,
+    DEFAULT_FINAL_TEMPERATURE,
+    DEFAULT_INITIAL_TEMPERATURE,
     DEFAULT_LOCAL_RADIUS,
     DEFAULT_OUTLIER_THRESHOLD,
     optimize_sidechains_with_local_mdff,
@@ -45,11 +48,11 @@ from .local_mdff import (
 
 def _bundle_version():
     if package_version is None:
-        return "0.4.1"
+        return "0.6.0"
     try:
         return package_version("ChimeraX-CorrectRotamer")
     except Exception:
-        return "0.4.1"
+        return "0.6.0"
 
 
 def _adaptive_ui_scale():
@@ -118,13 +121,13 @@ class CorrectRotamerTool(ToolInstance):
         "Residue",
         "Selected Rotamer",
         "Probability",
-        "Local Outliers",
+        "Local Outliers (Before → After)",
         "Result",
     )
 
     def __init__(self, session, tool_name):
         super().__init__(session, tool_name)
-        self.display_name = "CorrectRotamer"
+        self.display_name = "Rotamer Optimizer"
         self._running = False
         self._report = None
         self._threshold_initialized = False
@@ -188,7 +191,7 @@ class CorrectRotamerTool(ToolInstance):
         header_row = QHBoxLayout()
         header_row.setContentsMargins(0, 0, 0, 0)
         header_row.setSpacing(sp(8))
-        title = QLabel("CorrectRotamer", root)
+        title = QLabel("Rotamer Optimizer", root)
         title.setProperty("role", "title")
         version = QLabel(f"v{_bundle_version()}", root)
         version.setProperty("role", "version-badge")
@@ -198,7 +201,7 @@ class CorrectRotamerTool(ToolInstance):
         main_layout.addLayout(header_row)
 
         subtitle = QLabel(
-            "Density-guided canonical rotamer selection using ISOLDE validation",
+            "Automated rotamer correction with local ISOLDE MDFF",
             root,
         )
         subtitle.setProperty("role", "caption")
@@ -245,15 +248,19 @@ class CorrectRotamerTool(ToolInstance):
         mdff_run_card, mdff_run_layout = self._make_card(
             root, "Optimize Side Chains with Local MDFF", sp
         )
-        mdff_explanation = QLabel(
-            "Tries canonical rotamers in decreasing ISOLDE probability. Each "
-            "trial receives a short local MDFF minimisation; the first trial "
-            "with no local rotamer outliers is accepted.",
-            root,
+        mdff_tooltip = (
+            "<b>Automated Local MDFF</b><br>"
+            "Canonical rotamers are tried in decreasing ISOLDE probability. "
+            "Each trial receives local MDFF annealing followed by final "
+            "minimisation. A candidate "
+            "is accepted only if it fixes the target, reduces the local outlier "
+            "count and creates no new neighboring outliers.<br><br>"
+            "The workflow starts and stops ISOLDE annealing/minimisation runs, "
+            "focuses each "
+            "active local region, restores rejected coordinates and temporary "
+            "backbone restraints, then restores the original view."
         )
-        mdff_explanation.setWordWrap(True)
-        mdff_explanation.setProperty("role", "caption")
-        mdff_run_layout.addWidget(mdff_explanation)
+        mdff_run_card.setToolTip(mdff_tooltip)
 
         parameters_header = QLabel("Local MDFF Parameters", root)
         parameters_header.setProperty("role", "title")
@@ -277,20 +284,63 @@ class CorrectRotamerTool(ToolInstance):
         self.local_radius.setValue(DEFAULT_LOCAL_RADIUS)
         settings.addWidget(self.local_radius, 0, 1)
 
-        settings.addWidget(QLabel("MDFF coordinate updates", root), 1, 0)
-        self.coordinate_updates = QSpinBox(root)
-        self.coordinate_updates.setRange(1, 20)
-        self.coordinate_updates.setValue(DEFAULT_COORDINATE_UPDATES)
-        settings.addWidget(self.coordinate_updates, 1, 1)
+        settings.addWidget(QLabel("Initial temperature (K)", root), 1, 0)
+        self.initial_temperature = QDoubleSpinBox(root)
+        self.initial_temperature.setDecimals(1)
+        self.initial_temperature.setRange(0.0, 300.0)
+        self.initial_temperature.setSingleStep(5.0)
+        self.initial_temperature.setValue(DEFAULT_INITIAL_TEMPERATURE)
+        self.initial_temperature.setToolTip(
+            "Temperature used for the first annealing coordinate update."
+        )
+        settings.addWidget(self.initial_temperature, 1, 1)
 
-        settings.addWidget(QLabel("Backbone restraint (kJ mol⁻¹ Å⁻²)", root), 2, 0)
+        settings.addWidget(QLabel("Annealing updates", root), 2, 0)
+        self.annealing_updates = QSpinBox(root)
+        self.annealing_updates.setRange(1, 100)
+        self.annealing_updates.setSingleStep(5)
+        self.annealing_updates.setValue(DEFAULT_ANNEALING_UPDATES)
+        self.annealing_updates.setToolTip(
+            "Number of ISOLDE dynamics coordinate updates while cooling (1–100)."
+        )
+        settings.addWidget(self.annealing_updates, 2, 1)
+
+        settings.addWidget(QLabel("Final temperature (K)", root), 3, 0)
+        self.final_temperature = QDoubleSpinBox(root)
+        self.final_temperature.setDecimals(1)
+        self.final_temperature.setRange(0.0, DEFAULT_INITIAL_TEMPERATURE)
+        self.final_temperature.setSingleStep(5.0)
+        self.final_temperature.setValue(DEFAULT_FINAL_TEMPERATURE)
+        self.final_temperature.setToolTip(
+            "Temperature reached at the end of the annealing stage."
+        )
+        self.initial_temperature.valueChanged.connect(
+            self.final_temperature.setMaximum
+        )
+        settings.addWidget(self.final_temperature, 3, 1)
+
+        settings.addWidget(QLabel("Final minimization updates", root), 4, 0)
+        self.final_minimization_updates = QSpinBox(root)
+        self.final_minimization_updates.setRange(1, 100)
+        self.final_minimization_updates.setSingleStep(5)
+        self.final_minimization_updates.setValue(
+            DEFAULT_FINAL_MINIMIZATION_UPDATES
+        )
+        self.final_minimization_updates.setToolTip(
+            "Number of ISOLDE minimization coordinate updates after cooling (1–100)."
+        )
+        # Compatibility for external GUI smoke tests written for v0.5.x.
+        self.coordinate_updates = self.final_minimization_updates
+        settings.addWidget(self.final_minimization_updates, 4, 1)
+
+        settings.addWidget(QLabel("Backbone restraint (kJ mol⁻¹ Å⁻²)", root), 5, 0)
         self.backbone_spring = QDoubleSpinBox(root)
         self.backbone_spring.setRange(10.0, 1000.0)
         self.backbone_spring.setSingleStep(50.0)
         self.backbone_spring.setValue(DEFAULT_BACKBONE_SPRING_CONSTANT / 100.0)
-        settings.addWidget(self.backbone_spring, 2, 1)
+        settings.addWidget(self.backbone_spring, 5, 1)
 
-        settings.addWidget(QLabel("Outlier threshold (%)", root), 3, 0)
+        settings.addWidget(QLabel("Outlier threshold (%)", root), 6, 0)
         self.outlier_threshold = QDoubleSpinBox(root)
         self.outlier_threshold.setDecimals(3)
         self.outlier_threshold.setRange(0.001, 100.0)
@@ -299,7 +349,7 @@ class CorrectRotamerTool(ToolInstance):
         self.outlier_threshold.setToolTip(
             "A rotamer is an outlier when its ISOLDE P-value is below this percentage"
         )
-        settings.addWidget(self.outlier_threshold, 3, 1)
+        settings.addWidget(self.outlier_threshold, 6, 1)
         settings.setColumnStretch(0, 1)
         settings.setColumnStretch(1, 1)
         parameters_card_layout.addLayout(settings)
@@ -318,6 +368,7 @@ class CorrectRotamerTool(ToolInstance):
         self.local_mdff_button = QPushButton("Optimize Side Chains with Local MDFF", root)
         self.local_mdff_button.setProperty("variant", "primary")
         self.local_mdff_button.setMinimumWidth(sp(260, 190))
+        self.local_mdff_button.setToolTip(mdff_tooltip)
         self.local_mdff_button.clicked.connect(self._run_local_mdff)
         mdff_run_layout.addWidget(self.local_mdff_button, 0, Qt.AlignLeft)
 
@@ -331,16 +382,6 @@ class CorrectRotamerTool(ToolInstance):
         self.run_status.setWordWrap(True)
         mdff_run_layout.addWidget(self.run_status)
         main_layout.addWidget(mdff_run_card)
-
-        notice = QLabel(
-            "This workflow explicitly starts and stops short ISOLDE minimisations. "
-            "Each active local region is focused automatically; rejected coordinates "
-            "and temporary backbone restraints are restored.",
-            root,
-        )
-        notice.setProperty("role", "notice")
-        notice.setWordWrap(True)
-        main_layout.addWidget(notice)
         main_layout.addStretch(1)
 
         results_header = QLabel("Residue Results", root)
@@ -424,8 +465,11 @@ class CorrectRotamerTool(ToolInstance):
             }}
             QTabBar::tab:selected {{ background: #1d1d1f; color: #ffffff; font-weight: 600; }}
             QTabBar::tab:hover {{ background: rgba(255, 255, 255, 0.10); }}
-            QFrame[card="dark"] {{ background: #1d1d1f; border: none; border-radius: 10px; }}
-            QLabel {{ background: transparent; color: inherit; }}
+            QFrame[card="dark"] {{
+                background: #1d1d1f; color: #ffffff;
+                border: none; border-radius: 10px;
+            }}
+            QLabel {{ background: transparent; color: #ffffff; }}
             QLabel[role="title"] {{ color: #ffffff; font-size: 20px; font-weight: 600; }}
             QLabel[role="field-label"] {{ color: #ffffff; font-size: 13px; font-weight: 600; }}
             QLabel[role="caption"] {{ font-size: 12px; color: rgba(255,255,255,0.72); }}
@@ -685,7 +729,7 @@ class CorrectRotamerTool(ToolInstance):
         if structure is None or volume is None:
             QMessageBox.warning(
                 self.tool_window.ui_area,
-                "CorrectRotamer",
+                "Rotamer Optimizer",
                 "Choose both a structure and a density map.",
             )
             return
@@ -694,7 +738,7 @@ class CorrectRotamerTool(ToolInstance):
             self.tool_window.ui_area,
             "Automated Local MDFF",
             "This action will automatically start and stop short ISOLDE "
-            "minimisations for each rotamer candidate. Continue?",
+            "annealing and minimisation runs for each rotamer candidate. Continue?",
             QMessageBox.Yes | QMessageBox.No,
             QMessageBox.No,
         )
@@ -717,7 +761,12 @@ class CorrectRotamerTool(ToolInstance):
                     structure,
                     volume,
                     local_radius=self.local_radius.value(),
-                    coordinate_updates=self.coordinate_updates.value(),
+                    initial_temperature=self.initial_temperature.value(),
+                    annealing_updates=self.annealing_updates.value(),
+                    final_temperature=self.final_temperature.value(),
+                    final_minimization_updates=(
+                        self.final_minimization_updates.value()
+                    ),
                     # GUI is expressed per A^2; ISOLDE stores per nm^2.
                     backbone_spring_constant=self.backbone_spring.value() * 100.0,
                     # GUI is percentage; the validator returns a 0..1 P-value.
@@ -735,7 +784,7 @@ class CorrectRotamerTool(ToolInstance):
             self.summary.setText(str(error))
             self.session.logger.error(str(error))
             QMessageBox.critical(
-                self.tool_window.ui_area, "CorrectRotamer", str(error)
+                self.tool_window.ui_area, "Rotamer Optimizer", str(error)
             )
         finally:
             self._running = False
@@ -743,28 +792,36 @@ class CorrectRotamerTool(ToolInstance):
 
     def _populate_local_mdff_results(self, report):
         self.results_table.setHorizontalHeaderLabels(
-            ("Residue", "Selected Rotamer", "Probability", "Local Outliers", "Result")
+            self._HEADERS
         )
         self.results_table.setSortingEnabled(False)
         self.results_table.setRowCount(len(report.residues))
         for row, result in enumerate(report.residues):
             selected = result.selected
-            if selected is None:
+            if result.resolved_before_trial:
                 values = (
                     residue_label(result.residue),
                     "—",
                     "—",
+                    str(result.baseline_local_outlier_count),
+                    "Already resolved by an earlier local optimization",
+                )
+            elif selected is None:
+                values = (
+                    residue_label(result.residue),
                     "—",
-                    "Unchanged — all local MDFF trials failed",
+                    "—",
+                    f"{result.baseline_local_outlier_count} → unchanged",
+                    "Unchanged — no safe local improvement",
                 )
             else:
-                zero = selected.local_outlier_count == 0
                 values = (
                     residue_label(result.residue),
                     selected.target_name,
                     f"{selected.probability:.3g}%",
-                    str(selected.local_outlier_count),
-                    "Accepted — no local outliers" if zero else "Accepted — fewest local outliers",
+                    f"{result.baseline_local_outlier_count} → "
+                    f"{selected.local_outlier_count}",
+                    "Accepted — target fixed, no new neighboring outliers",
                 )
             for column, value in enumerate(values):
                 item = QTableWidgetItem(value)
@@ -788,19 +845,28 @@ class CorrectRotamerTool(ToolInstance):
     def _log_local_mdff_report(self, report):
         logger = self.session.logger
         logger.info(
-            f"CorrectRotamer local MDFF: found {report.original_outlier_count} "
+            f"Rotamer Optimizer: found {report.original_outlier_count} "
             f"original rotamer outlier(s) at threshold "
             f"{report.outlier_threshold * 100.0:.3g}%."
         )
         for result in report.residues:
             selected = result.selected
-            if selected is None:
-                logger.warning(f"{residue_label(result.residue)}: unchanged")
+            if result.resolved_before_trial:
+                logger.info(
+                    f"{residue_label(result.residue)}: already resolved by an "
+                    "earlier local optimization"
+                )
+            elif selected is None:
+                logger.warning(
+                    f"{residue_label(result.residue)}: unchanged; no candidate "
+                    "fixed the target without creating a neighboring outlier"
+                )
             else:
                 logger.info(
                     f"{residue_label(result.residue)}: selected "
                     f"{selected.target_name} ({selected.probability:.3g}%), "
-                    f"{selected.local_outlier_count} local outlier(s)"
+                    f"local outliers {result.baseline_local_outlier_count} -> "
+                    f"{selected.local_outlier_count}"
                 )
 
     def _result_clicked(self, row, column):
@@ -824,6 +890,11 @@ class CorrectRotamerTool(ToolInstance):
             pass
 
     def _show_local_mdff_details(self, result):
+        if result.resolved_before_trial:
+            self.candidate_details.setPlainText(
+                "Already resolved by an earlier local optimization; no candidates tested."
+            )
+            return
         selected_index = (
             result.selected.target_index if result.selected is not None else None
         )
@@ -832,10 +903,16 @@ class CorrectRotamerTool(ToolInstance):
             marker = "★" if candidate.target_index == selected_index else " "
             if candidate.completed:
                 outliers = ", ".join(candidate.outlier_labels) or "none"
+                decision = (
+                    "accepted"
+                    if candidate.selection_reason is None
+                    else f"rejected — {candidate.selection_reason}"
+                )
                 lines.append(
                     f"{marker} {candidate.target_name} "
                     f"({candidate.probability:.3g}%): "
-                    f"{candidate.local_outlier_count} local outlier(s) [{outliers}]"
+                    f"local outliers {result.baseline_local_outlier_count} → "
+                    f"{candidate.local_outlier_count} [{outliers}]; {decision}"
                 )
             else:
                 lines.append(

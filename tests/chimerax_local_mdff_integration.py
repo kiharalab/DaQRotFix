@@ -28,24 +28,30 @@ mdff_mgr.enabled = True
 
 rotamer_mgr = session_extensions.get_rotamer_mgr(session)
 outliers, _scores = rotamer_mgr.outliers(rotamer_mgr.get_rotamers(model.residues))
-if len(outliers):
-    from chimerax.correct_rotamer.local_mdff import (
-        IsoldeLocalMDFFRunner,
-        _local_protein_residues,
-    )
+from chimerax.correct_rotamer.local_mdff import (
+    IsoldeLocalMDFFRunner,
+    _local_protein_residues,
+)
 
-    residue = outliers[0].residue
-    local_residues = _local_protein_residues(residue, 3.0)
-    runner = IsoldeLocalMDFFRunner(
-        session,
-        model,
-        volume,
-        coordinate_updates=1,
-        max_iterations_per_update=25,
-        timeout_ms=180000,
-    )
-    runner.run(local_residues)
+residue = outliers[0].residue if len(outliers) else model.residues[0]
+local_residues = _local_protein_residues(residue, 3.0)
+original_temperature = isolde.sim_params.temperature
+original_smoothing = isolde.sim_params.trajectory_smoothing
+runner = IsoldeLocalMDFFRunner(
+    session,
+    model,
+    volume,
+    initial_temperature=20.0,
+    annealing_updates=2,
+    final_temperature=5.0,
+    final_minimization_updates=1,
+    max_iterations_per_update=25,
+    timeout_ms=180000,
+)
+runner.run(local_residues)
 
 assert not isolde.simulation_running
 assert mdff_mgr.enabled
+assert isolde.sim_params.temperature == original_temperature
+assert isolde.sim_params.trajectory_smoothing == original_smoothing
 session.logger.info(f"CORRECTROTAMER_LOCAL_MDFF_OK {len(outliers)}")

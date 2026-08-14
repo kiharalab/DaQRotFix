@@ -6,26 +6,35 @@
 <p>
 <b>correctrotamers mdff</b> <i>structure map</i>
 [<b>radius</b> <i>angstroms</i>]
-[<b>coordinateUpdates</b> <i>count</i>]
+[<b>initialTemperature</b> <i>kelvin</i>]
+[<b>annealingUpdates</b> <i>count</i>]
+[<b>finalTemperature</b> <i>kelvin</i>]
+[<b>finalMinimizationUpdates</b> <i>count</i>]
 [<b>backboneSpringConstant</b> <i>kJ mol-1 A-2</i>]
 [<b>outlierThreshold</b> <i>P-value</i>]
 </p>
 <p>
 Snapshot the initial ISOLDE rotamer-outlier list and optimize each residue in
 turn. Canonical targets are tried in decreasing expected probability. Every
-trial starts from the coordinates accepted before that residue, receives a
-short local ISOLDE MDFF minimisation, and is assessed by the number of rotamer
-outliers in the local protein region.
+trial starts from the coordinates accepted before that residue, receives local
+ISOLDE MDFF annealing followed by final minimisation, and is assessed by the
+number of rotamer outliers in the local protein region. The default schedule
+cools from 20 K to 5 K over 20 coordinate updates, then performs 20 final
+minimisation coordinate updates.
 </p>
 <p>
-The first target with zero local outliers is accepted. If no target reaches
-zero, the target with the fewest local outliers is accepted, with decreasing
-probability as the tie-breaker. Rejected-trial coordinates are restored.
+A target is accepted only if the target residue is no longer an outlier, the
+total local outlier count decreases, and no new neighboring outlier is created.
+The first target meeting all three conditions is accepted in decreasing
+probability order. If none qualifies, the residue remains unchanged.
+Rejected-trial coordinates are restored.
 Backbone N, CA, C and O atoms are temporarily position-restrained; side chains
 remain mobile. The map must already have an enabled ISOLDE MDFF manager.
 The default outlier threshold is the current ISOLDE cutoff (normally 0.0005,
 equivalent to 0.05%). The active local region is automatically selected and
 focused while each MDFF trial runs.
+Trajectory smoothing is disabled during each automated trial. The previous
+ISOLDE temperature and smoothing settings are restored afterward.
 </p>
 </body>
 </html>

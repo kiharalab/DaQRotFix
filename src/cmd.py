@@ -5,7 +5,13 @@ from chimerax.core.commands import CmdDesc, FloatArg, IntArg
 from chimerax.map import MapArg
 
 from .correction import correct_rotamer_outliers, residue_label
-from .local_mdff import optimize_sidechains_with_local_mdff
+from .local_mdff import (
+    DEFAULT_ANNEALING_UPDATES,
+    DEFAULT_FINAL_MINIMIZATION_UPDATES,
+    DEFAULT_FINAL_TEMPERATURE,
+    DEFAULT_INITIAL_TEMPERATURE,
+    optimize_sidechains_with_local_mdff,
+)
 
 
 def _log_report(session, report):
@@ -53,23 +59,26 @@ correct_rotamers_desc = CmdDesc(
 def _log_local_mdff_report(session, report):
     logger = session.logger
     logger.info(
-        f"CorrectRotamer local MDFF: found {report.original_outlier_count} "
+        f"Rotamer Optimizer: found {report.original_outlier_count} "
         f"original rotamer outlier(s) at threshold "
         f"{report.outlier_threshold:.6g}."
     )
     for result in report.residues:
         selected = result.selected
         label = residue_label(result.residue)
-        if selected is None:
-            logger.warning(f"{label}: all local MDFF trials failed; unchanged")
+        if result.resolved_before_trial:
+            logger.info(f"{label}: already resolved by an earlier local optimization")
+        elif selected is None:
+            logger.warning(f"{label}: no safe local improvement; unchanged")
         else:
             logger.info(
                 f"{label}: selected {selected.target_name} "
                 f"({selected.probability:.3g}%), "
-                f"{selected.local_outlier_count} local outlier(s)"
+                f"local outliers {result.baseline_local_outlier_count} -> "
+                f"{selected.local_outlier_count}"
             )
     logger.info(
-        f"CorrectRotamer local MDFF: optimized {report.corrected_count}/"
+        f"Rotamer Optimizer: optimized {report.corrected_count}/"
         f"{report.original_outlier_count} original outlier(s)."
     )
 
@@ -80,7 +89,11 @@ def correct_rotamers_mdff_cmd(
     volume,
     *,
     radius=5.0,
-    coordinate_updates=3,
+    initial_temperature=DEFAULT_INITIAL_TEMPERATURE,
+    annealing_updates=DEFAULT_ANNEALING_UPDATES,
+    final_temperature=DEFAULT_FINAL_TEMPERATURE,
+    final_minimization_updates=DEFAULT_FINAL_MINIMIZATION_UPDATES,
+    coordinate_updates=None,
     backbone_spring_constant=500.0,
     outlier_threshold=None,
 ):
@@ -89,7 +102,14 @@ def correct_rotamers_mdff_cmd(
         structure,
         volume,
         local_radius=radius,
-        coordinate_updates=coordinate_updates,
+        initial_temperature=initial_temperature,
+        annealing_updates=annealing_updates,
+        final_temperature=final_temperature,
+        final_minimization_updates=(
+            coordinate_updates
+            if coordinate_updates is not None
+            else final_minimization_updates
+        ),
         # Command value is in kJ mol-1 A-2; ISOLDE stores kJ mol-1 nm-2.
         backbone_spring_constant=backbone_spring_constant * 100.0,
         outlier_threshold=outlier_threshold,
@@ -102,9 +122,16 @@ correct_rotamers_mdff_desc = CmdDesc(
     required=[("structure", AtomicStructureArg), ("volume", MapArg)],
     keyword=[
         ("radius", FloatArg),
+        ("initial_temperature", FloatArg),
+        ("annealing_updates", IntArg),
+        ("final_temperature", FloatArg),
+        ("final_minimization_updates", IntArg),
+        # Legacy v0.5.x alias for final_minimization_updates.
         ("coordinate_updates", IntArg),
         ("backbone_spring_constant", FloatArg),
         ("outlier_threshold", FloatArg),
     ],
-    synopsis="optimize rotamer outliers with probability-ordered local ISOLDE MDFF",
+    synopsis=(
+        "optimize rotamer outliers with local ISOLDE MDFF annealing and minimization"
+    ),
 )

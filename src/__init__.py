@@ -38,7 +38,7 @@ class _CorrectRotamerAPI(BundleAPI):
 
     @staticmethod
     def start_tool(session, bundle_info, tool_info):
-        if tool_info.name != "Correct Rotamers":
+        if tool_info.name not in ("Rotamer Optimizer", "Correct Rotamers"):
             raise ValueError(f"Unknown tool: {tool_info.name}")
         from .tool import CorrectRotamerTool
 

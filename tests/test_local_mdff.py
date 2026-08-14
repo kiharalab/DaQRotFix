@@ -40,11 +40,12 @@ class FakeAtoms:
 
 
 class FakeResidue:
-    name = "LYS"
-    chain_id = "A"
-    number = 7
-    insertion_code = ""
-    deleted = False
+    def __init__(self, name="LYS", number=7):
+        self.name = name
+        self.chain_id = "A"
+        self.number = number
+        self.insertion_code = ""
+        self.deleted = False
 
 
 class FakeRotamer:
@@ -91,6 +92,27 @@ class FakeRunner:
 
 
 class LocalMDFFAlgorithmTests(unittest.TestCase):
+    def test_default_two_stage_schedule(self):
+        self.assertEqual(local_mdff.DEFAULT_INITIAL_TEMPERATURE, 20.0)
+        self.assertEqual(local_mdff.DEFAULT_ANNEALING_UPDATES, 20)
+        self.assertEqual(local_mdff.DEFAULT_FINAL_TEMPERATURE, 5.0)
+        self.assertEqual(local_mdff.DEFAULT_FINAL_MINIMIZATION_UPDATES, 20)
+
+    def test_annealing_temperature_includes_both_endpoints(self):
+        temperatures = [
+            local_mdff.annealing_temperature(20.0, 5.0, index, 4)
+            for index in range(4)
+        ]
+        self.assertEqual(temperatures, [20.0, 15.0, 10.0, 5.0])
+
+    def test_runner_rejects_heating_schedule(self):
+        with self.assertRaisesRegex(ValueError, "Final temperature"):
+            local_mdff.IsoldeLocalMDFFRunner(
+                object(), object(), object(),
+                initial_temperature=20.0,
+                final_temperature=25.0,
+            )
+
     def setUp(self):
         self.residue = FakeResidue()
         self.rotamer = FakeRotamer(self.residue)
@@ -154,6 +176,10 @@ class LocalMDFFAlgorithmTests(unittest.TestCase):
     def _outlier_objects(self, count):
         return [types.SimpleNamespace(residue=self.residue) for _ in range(count)]
 
+    @staticmethod
+    def _outliers_for(*residues):
+        return [types.SimpleNamespace(residue=residue) for residue in residues]
+
     def test_probability_order_and_first_zero_outlier_candidate_wins(self):
         counts = {2: 2, 3: 0, 1: 1}
         local_mdff._outliers_in_residues = (
@@ -177,33 +203,80 @@ class LocalMDFFAlgorithmTests(unittest.TestCase):
         # Neighbor coordinates from the prior MDFF trial must be reset.
         self.assertEqual(self.runner.starts[1][1, 0], 0.0)
 
-    def test_fewest_outliers_wins_with_probability_as_tie_break(self):
-        counts = {2: 3, 3: 1, 1: 1}
-        local_mdff._outliers_in_residues = (
-            lambda manager, residues, threshold=None: self._outlier_objects(
-                1
-                if int(self.model.atoms._coords[0, 0]) == 0
-                else counts[int(self.model.atoms._coords[0, 0])]
-            )
-        )
+    def test_rejects_new_neighbor_outlier_then_accepts_safe_improvement(self):
+        neighbor_one = FakeResidue("LEU", 8)
+        neighbor_two = FakeResidue("ARG", 9)
+        new_neighbor = FakeResidue("PHE", 10)
+        calls = {"count": 0}
+
+        def local_outliers(manager, residues, threshold=None):
+            calls["count"] += 1
+            if calls["count"] == 1:
+                return self._outliers_for(self.residue)
+            marker = int(self.model.atoms._coords[0, 0])
+            if marker == 0:
+                return self._outliers_for(
+                    self.residue, neighbor_one, neighbor_two
+                )
+            if marker == 2:
+                # Count improves, but a previously sound neighbor became bad.
+                return self._outliers_for(neighbor_one, new_neighbor)
+            if marker == 3:
+                return self._outliers_for(neighbor_one, neighbor_two)
+            return self._outliers_for(self.residue)
+
+        local_mdff._outliers_in_residues = local_outliers
 
         report = local_mdff.optimize_sidechains_with_local_mdff(
             self.session, self.model, self.volume, runner=self.runner
         )
 
         result = report.residues[0]
-        self.assertEqual([c.target_name for c in result.candidates], ["high", "middle", "low"])
+        self.assertEqual([c.target_name for c in result.candidates], ["high", "middle"])
         self.assertEqual(result.selected.target_name, "middle")
-        self.assertEqual(result.selected.local_outlier_count, 1)
+        self.assertEqual(result.baseline_local_outlier_count, 3)
+        self.assertEqual(result.selected.local_outlier_count, 2)
+        self.assertEqual(result.candidates[0].new_outlier_labels, ("A:PHE10",))
         self.assertEqual(self.model.atoms._coords[0, 0], 3.0)
         self.assertEqual(self.model.atoms._coords[1, 0], 30.0)
 
+    def test_no_safe_improvement_leaves_baseline_coordinates_unchanged(self):
+        neighbor = FakeResidue("LEU", 8)
+        new_neighbor = FakeResidue("PHE", 10)
+        calls = {"count": 0}
+
+        def local_outliers(manager, residues, threshold=None):
+            calls["count"] += 1
+            if calls["count"] == 1:
+                return self._outliers_for(self.residue)
+            marker = int(self.model.atoms._coords[0, 0])
+            if marker == 0:
+                return self._outliers_for(self.residue, neighbor)
+            if marker == 2:
+                return self._outliers_for(self.residue)
+            if marker == 3:
+                return self._outliers_for(neighbor, new_neighbor)
+            return self._outliers_for(self.residue, neighbor)
+
+        local_mdff._outliers_in_residues = local_outliers
+        report = local_mdff.optimize_sidechains_with_local_mdff(
+            self.session, self.model, self.volume, runner=self.runner
+        )
+
+        result = report.residues[0]
+        self.assertIsNone(result.selected)
+        self.assertEqual(len(result.candidates), 3)
+        self.assertEqual(self.model.atoms._coords[0, 0], 0.0)
+        self.assertEqual(self.model.atoms._coords[1, 0], 0.0)
+
     def test_custom_threshold_is_used_for_initial_and_local_validation(self):
         thresholds = []
+        calls = {"count": 0}
 
         def threshold_outliers(manager, residues, threshold=None):
             thresholds.append(threshold)
-            if int(self.model.atoms._coords[0, 0]) == 0:
+            calls["count"] += 1
+            if calls["count"] <= 2:
                 return self._outlier_objects(1)
             return []
 
@@ -217,7 +290,24 @@ class LocalMDFFAlgorithmTests(unittest.TestCase):
         )
 
         self.assertEqual(report.outlier_threshold, 0.01)
-        self.assertEqual(thresholds, [0.01, 0.01])
+        self.assertEqual(thresholds, [0.01, 0.01, 0.01])
+
+    def test_residue_resolved_by_previous_trial_is_skipped(self):
+        calls = {"count": 0}
+
+        def local_outliers(manager, residues, threshold=None):
+            calls["count"] += 1
+            return self._outlier_objects(1) if calls["count"] == 1 else []
+
+        local_mdff._outliers_in_residues = local_outliers
+        report = local_mdff.optimize_sidechains_with_local_mdff(
+            self.session, self.model, self.volume, runner=self.runner
+        )
+
+        result = report.residues[0]
+        self.assertTrue(result.resolved_before_trial)
+        self.assertEqual(result.candidates, [])
+        self.assertEqual(self.runner.starts, [])
 
 
 if __name__ == "__main__":
