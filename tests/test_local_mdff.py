@@ -96,7 +96,7 @@ class LocalMDFFAlgorithmTests(unittest.TestCase):
         self.assertEqual(local_mdff.DEFAULT_INITIAL_TEMPERATURE, 20.0)
         self.assertEqual(local_mdff.DEFAULT_ANNEALING_UPDATES, 20)
         self.assertEqual(local_mdff.DEFAULT_FINAL_TEMPERATURE, 5.0)
-        self.assertEqual(local_mdff.DEFAULT_FINAL_MINIMIZATION_UPDATES, 20)
+        self.assertEqual(local_mdff.DEFAULT_FINAL_MINIMIZATION_UPDATES, 5)
 
     def test_annealing_temperature_includes_both_endpoints(self):
         temperatures = [

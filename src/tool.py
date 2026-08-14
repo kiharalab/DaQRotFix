@@ -48,11 +48,11 @@ from .local_mdff import (
 
 def _bundle_version():
     if package_version is None:
-        return "0.6.0"
+        return "0.6.1"
     try:
         return package_version("ChimeraX-CorrectRotamer")
     except Exception:
-        return "0.6.0"
+        return "0.6.1"
 
 
 def _adaptive_ui_scale():
@@ -119,9 +119,9 @@ class CorrectRotamerTool(ToolInstance):
 
     _HEADERS = (
         "Residue",
-        "Selected Rotamer",
+        "Selected\nRotamer",
         "Probability",
-        "Local Outliers (Before → After)",
+        "Local Outliers\n(Before → After)",
         "Result",
     )
 
@@ -238,7 +238,9 @@ class CorrectRotamerTool(ToolInstance):
         self.mdff_status.setWordWrap(True)
         refresh_button = QPushButton("Refresh", root)
         refresh_button.setProperty("variant", "secondary-gray")
-        refresh_button.setToolTip("Refresh open structures and maps")
+        refresh_button.setToolTip(
+            "Recheck the model/map MDFF setup after configuring it in ISOLDE"
+        )
         refresh_button.clicked.connect(self._refresh_models)
         mdff_row.addWidget(self.mdff_status, 1)
         mdff_row.addWidget(refresh_button, 0, Qt.AlignRight)
@@ -403,8 +405,13 @@ class CorrectRotamerTool(ToolInstance):
         self.results_table.verticalHeader().setVisible(False)
         self.results_table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         header = self.results_table.horizontalHeader()
-        for column in range(4):
+        for column in (0, 2):
             header.setSectionResizeMode(column, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(1, QHeaderView.Interactive)
+        header.setSectionResizeMode(3, QHeaderView.Interactive)
+        header.resizeSection(1, sp(108, 88))
+        header.resizeSection(3, sp(130, 108))
+        header.setMinimumHeight(sp(48, 40))
         header.setSectionResizeMode(4, QHeaderView.Stretch)
         self.results_table.cellClicked.connect(self._result_clicked)
         results_layout.addWidget(self.results_table, 1)
@@ -670,7 +677,8 @@ class CorrectRotamerTool(ToolInstance):
 
         if structure is None or volume is None:
             self._set_status_badge(
-                "Open and select both a structure and a density map.", "warning"
+                "Open ISOLDE, select a structure and density map, and set up MDFF.",
+                "warning",
             )
             local_ready = False
         elif isolde is not None and isolde.simulation_running:
@@ -681,7 +689,9 @@ class CorrectRotamerTool(ToolInstance):
             local_ready = False
         elif self._current_mdff_mgr() is None:
             self._set_status_badge(
-                "No existing MDFF manager for this model/map pair.", "error"
+                "No MDFF setup for this model/map. Set it up in ISOLDE, then "
+                "click Refresh.",
+                "error",
             )
             local_ready = False
         elif isolde is None:
@@ -691,12 +701,14 @@ class CorrectRotamerTool(ToolInstance):
             local_ready = False
         elif not bool(getattr(self._current_mdff_mgr(), "enabled", False)):
             self._set_status_badge(
-                "Enable this map's existing ISOLDE MDFF potential.", "warning"
+                "Enable this model/map's MDFF potential in ISOLDE, then click "
+                "Refresh.",
+                "warning",
             )
             local_ready = False
         else:
             self._set_status_badge(
-                "Existing enabled MDFF manager found. Ready for local optimization.",
+                "ISOLDE MDFF setup found and enabled. Ready for local optimization.",
                 "ready",
             )
             local_ready = True

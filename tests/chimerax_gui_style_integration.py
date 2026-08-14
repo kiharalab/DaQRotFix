@@ -45,5 +45,10 @@ assert tool.final_temperature.value() == 5.0
 assert tool.final_temperature.maximum() == 20.0
 assert tool.final_minimization_updates.minimum() == 1
 assert tool.final_minimization_updates.maximum() == 100
-assert tool.final_minimization_updates.value() == 20
+assert tool.final_minimization_updates.value() == 5
+assert tool._HEADERS[1] == "Selected\nRotamer"
+assert tool._HEADERS[3] == "Local Outliers\n(Before → After)"
+assert tool.results_table.columnWidth(1) < 130
+assert tool.results_table.columnWidth(3) < 150
+assert "ISOLDE" in tool.mdff_status.text()
 session.logger.info(f"CORRECTROTAMER_PARAMETER_LABELS_WHITE {found}")

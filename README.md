@@ -50,7 +50,7 @@ correctrotamers #1 #2
 The local-MDFF workflow is also available as:
 
 ```text
-correctrotamers mdff #1 #2 radius 5 initialTemperature 20 annealingUpdates 20 finalTemperature 5 finalMinimizationUpdates 20 backboneSpringConstant 500 outlierThreshold 0.0005
+correctrotamers mdff #1 #2 radius 5 initialTemperature 20 annealingUpdates 20 finalTemperature 5 finalMinimizationUpdates 5 backboneSpringConstant 500 outlierThreshold 0.0005
 ```
 
 The graphical tool uses **Optimize Side Chains with Local MDFF** as its standard
@@ -58,7 +58,7 @@ workflow. Its separate **PARAMETERS** tab contains controls for local radius,
 initial temperature, annealing coordinate updates, final temperature, final
 minimization coordinate updates, backbone restraint strength and the
 rotamer-outlier threshold. The default cooling schedule is 20 K to 5 K over
-20 coordinate updates, followed by 20 minimization coordinate updates. Both
+20 coordinate updates, followed by 5 minimization coordinate updates. Both
 update controls accept values from 1 to 100. The threshold is shown as a
 percentage (ISOLDE's default is 0.05%).
 The current local region is focused automatically during every MDFF trial, and

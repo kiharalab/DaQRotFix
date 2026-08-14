@@ -1,5 +1,5 @@
 <BundleInfo name="ChimeraX-CorrectRotamer"
-            version="0.6.0" package="chimerax.correct_rotamer"
+            version="0.6.1" package="chimerax.correct_rotamer"
             minSessionVersion="1" maxSessionVersion="1">
   <Author>Genki Terashi</Author>
   <Email>gterashi@purdue.edu</Email>
