@@ -1,115 +1,154 @@
+<p align="center">
+  <img src="img/daqrotfix-logo.png" alt="DaQRotFix logo" width="280">
+</p>
+
 # DaQRotFix
 
 **Density-assisted Quick Rotamer Fix**
 
-DaQRotFix is an independent ChimeraX extension for rapid, density-guided
-correction of rotamer outliers. It requires ISOLDE for rotamer validation and
-local-MDFF optimization. DaQRotFix is not affiliated with or endorsed by the
-ISOLDE developers or the University of Cambridge.
+DaQRotFix is a plugin for [UCSF ChimeraX](https://www.rbvi.ucsf.edu/chimerax/)
+that corrects protein rotamer outliers using an experimental density map and
+[ISOLDE](https://tristanic.github.io/isolde/). It provides a graphical local
+MDFF optimizer and a separate, simulation-free density-ranking command.
 
-It provides two deliberately separate workflows.
+> DaQRotFix is currently alpha software. Save your model before running an
+> automated optimization.
 
-### Density-only correction
+## Requirements
 
-For each outlier present at the start of a run, the bundle restores the
-original residue coordinates before trying every canonical ISOLDE target. It
-discards targets that remain validation outliers or place any side-chain heavy
-atom outside the map, then keeps the valid target with the highest unweighted
-mean interpolated density. Rotamer probability is never used for ranking.
+- UCSF ChimeraX
+- ISOLDE installed in ChimeraX
+- An atomic structure and a density map already associated through ISOLDE MDFF
 
-After enumeration, this workflow stops. It does not start, pause, or minimize
-an ISOLDE simulation and does not create or modify position restraints.
+DaQRotFix never creates an MDFF manager. Configure the structure/map pair in
+ISOLDE before running either workflow. Stop any active ISOLDE simulation first.
 
-### Automated local MDFF
+## Installation
 
-This explicit workflow snapshots the original outlier list, then handles each
-residue in turn. Canonical rotamers are tried in decreasing ISOLDE `Frequency`
-order. Each candidate starts from the coordinates accepted before that
-residue, receives local ISOLDE MDFF annealing followed by final minimization,
-and is scored by the number of rotamer outliers in the local protein region.
-
-A candidate is accepted only if the target residue is no longer an outlier,
-the total local outlier count decreases, and no previously sound neighboring
-residue becomes a new outlier. The first candidate meeting all three conditions
-is retained in probability order. If none qualifies, the residue remains at
-its pre-trial coordinates. Rejected local-MDFF coordinates are restored.
-Protein backbone N, CA, C and O atoms are strongly and temporarily
-position-restrained while side-chain atoms remain mobile.
-
-## Install
-
-ISOLDE must already be installed. From the ChimeraX command line:
+Download or clone this repository, then enter the following command in the
+**ChimeraX command line** (not a system terminal):
 
 ```text
-devel install /path/to/DaQRotFix
+devel install /absolute/path/to/DaQRotFix
 ```
 
-Restart ChimeraX after the first installation if the tool is not immediately
-listed. Open **Tools → Validation → DaQRotFix**, or run:
+Restart ChimeraX if the tool does not appear immediately after its first
+installation.
+
+## Graphical workflow
+
+1. Open the structure and density map in ChimeraX.
+2. Open ISOLDE, select the structure, and configure and enable the map's MDFF
+   potential.
+3. Open **Tools → Validation → DaQRotFix**.
+4. Select the structure and map, adjust options in **PARAMETERS**, and click
+   **Optimize Side Chains with Local MDFF**.
+
+The tool asks for confirmation before starting any simulations. During each
+candidate trial it focuses the local region; after the run it restores the
+original camera view and displays a residue-by-residue results table.
+
+Default GUI settings are:
+
+| Setting | Default |
+| --- | ---: |
+| Local radius | 5 Å |
+| Initial temperature | 20 K |
+| Annealing updates | 20 |
+| Final temperature | 5 K |
+| Final minimization updates | 5 |
+| Backbone restraint | 500 kJ mol⁻¹ Å⁻² |
+| Rotamer-outlier threshold | ISOLDE cutoff, normally 0.05% |
+
+The update controls accept values from 1 to 100. The GUI expresses the outlier
+threshold as a percentage.
+
+## Commands
+
+### Density-only correction
 
 ```text
 correctrotamers #1 #2
 ```
 
-The local-MDFF workflow is also available as:
+Here `#1` is an atomic structure and `#2` is its ISOLDE-associated density map.
+This command snapshots the current ISOLDE rotamer outliers and tries every
+canonical target for each residue. It rejects targets that remain outliers or
+place a side-chain heavy atom outside the map, then applies the valid target
+with the highest unweighted mean density at its side-chain heavy-atom centers.
+Rotamer probability is not used for ranking.
+
+This workflow does not start or minimize a simulation, change the MDFF state,
+or create or modify position restraints. Its MDFF manager must exist, but does
+not need to be enabled and the ISOLDE tool does not need to be open.
+
+### Automated local MDFF
+
+```text
+correctrotamers mdff #1 #2
+```
+
+ISOLDE must be open, and the selected structure/map pair must have an existing,
+enabled MDFF manager. The command accepts these optional keywords:
 
 ```text
 correctrotamers mdff #1 #2 radius 5 initialTemperature 20 annealingUpdates 20 finalTemperature 5 finalMinimizationUpdates 5 backboneSpringConstant 500 outlierThreshold 0.0005
 ```
 
-The graphical tool uses **Optimize Side Chains with Local MDFF** as its standard
-workflow. Its separate **PARAMETERS** tab contains controls for local radius,
-initial temperature, annealing coordinate updates, final temperature, final
-minimization coordinate updates, backbone restraint strength and the
-rotamer-outlier threshold. The default cooling schedule is 20 K to 5 K over
-20 coordinate updates, followed by 5 minimization coordinate updates. Both
-update controls accept values from 1 to 100. The threshold is shown as a
-percentage (ISOLDE's default is 0.05%).
-The current local region is focused automatically during every MDFF trial, and
-the original camera view is restored after the complete run. The tool always
-asks for confirmation before starting ISOLDE simulations.
+| Keyword | Meaning | Default |
+| --- | --- | ---: |
+| `radius` | Local protein-region radius in Å | `5` |
+| `initialTemperature` | Starting annealing temperature in K | `20` |
+| `annealingUpdates` | Dynamics coordinate updates during cooling | `20` |
+| `finalTemperature` | Ending annealing temperature in K | `5` |
+| `finalMinimizationUpdates` | Minimization coordinate updates after cooling | `5` |
+| `backboneSpringConstant` | N/CA/C/O restraint in kJ mol⁻¹ Å⁻² | `500` |
+| `outlierThreshold` | Rotamer P-value on a 0–1 scale | current ISOLDE cutoff |
 
-Here `#1` is an atomic structure and `#2` is the density map already associated
-with that structure in ISOLDE.
+`coordinateUpdates` remains available as a legacy alias for
+`finalMinimizationUpdates`.
 
-Both workflows refuse to run if an ISOLDE simulation is active or if
-`get_mdff_mgr(structure, volume, create=False)` returns `None`.
-Automated local MDFF additionally requires that manager to be enabled and that
-ISOLDE is already open.
+## How automated local MDFF selects a rotamer
 
-## Algorithm guarantees
+DaQRotFix snapshots the original outlier list, then processes those residues in
+turn. For each residue it:
 
-- No OpenMM minimization occurs while candidates are being tested.
-- Only ISOLDE chi moving-atom sets are rotated; backbone coordinates are not
-  moved during enumeration.
-- Original residue coordinates are restored before every candidate and again
-  before applying the winner.
-- Only side-chain non-hydrogen atoms contribute to the density score.
-- Any candidate with a scored atom outside the selected map is rejected.
-- The MDFF manager is verified with `create=False`; scoring never creates one.
-- ISOLDE simulation, minimization, MDFF state and restraints are not changed.
+1. Builds a local protein region and records its current rotamer outliers.
+2. Tries canonical targets in decreasing ISOLDE expected-frequency order.
+3. Restores the full pre-trial model coordinates before each target.
+4. Applies the target, checks that its scored side-chain atoms lie in the map,
+   and runs local MDFF annealing followed by final minimization.
+5. Accepts the first target that fixes the target residue, reduces the local
+   outlier count, and creates no new neighboring outlier.
 
-## Automated local-MDFF guarantees
+If no target meets all three acceptance conditions, the residue remains at its
+pre-trial coordinates. A residue fixed indirectly by an earlier local trial is
+recognized and skipped.
 
-- Candidates are tried in decreasing ISOLDE expected-frequency order.
-- The full model coordinates accepted before a residue are restored before
-  every candidate, so rejected MDFF motion cannot leak into the next trial.
-- Only the local protein region is mobile; ISOLDE still creates its fixed
-  physical context shell.
-- Backbone N, CA, C and O restraints are temporary and their prior settings
-  are restored after every trial.
-- Trajectory smoothing is disabled during automated annealing. The user's
-  original temperature and smoothing settings are restored after every trial.
-- Candidate acceptance is assessed only after cooling and final minimization.
-- Side chains are not position-restrained by this bundle.
-- The selected map must have an existing, enabled MDFF manager. The workflow
-  does not create or enable one.
+During a trial, only the local protein region is mobile and ISOLDE supplies its
+fixed physical context shell. Backbone N, CA, C, and O atoms receive temporary
+position restraints; side chains do not. Rejected coordinates cannot leak into
+later trials. DaQRotFix also restores the user's prior backbone-restraint
+settings, selection, selected ISOLDE model, temperature, trajectory smoothing,
+and relevant simulation parameters after each trial.
 
-## Development check
+## Development
 
-Build the bundle with the installed ChimeraX executable:
+Run the unit tests from a Python environment with NumPy installed:
 
 ```text
-/Applications/ChimeraX.app/Contents/bin/ChimeraX --nogui --exit \
-  --cmd "devel build /path/to/DaQRotFix"
+python3 -m unittest discover -s tests -p 'test_*.py'
 ```
+
+Build the bundle from the ChimeraX command line:
+
+```text
+devel build /absolute/path/to/DaQRotFix
+```
+
+The `tests/chimerax_*_integration.py` files are ChimeraX smoke tests and must be
+run with ChimeraX rather than a standard Python interpreter.
+
+## License
+
+[MIT](LICENSE)
