@@ -28,7 +28,7 @@ mdff_mgr.enabled = True
 
 rotamer_mgr = session_extensions.get_rotamer_mgr(session)
 outliers, _scores = rotamer_mgr.outliers(rotamer_mgr.get_rotamers(model.residues))
-from chimerax.correct_rotamer.local_mdff import (
+from chimerax.daq_rot_fix.local_mdff import (
     IsoldeLocalMDFFRunner,
     _local_protein_residues,
 )
@@ -54,4 +54,4 @@ assert not isolde.simulation_running
 assert mdff_mgr.enabled
 assert isolde.sim_params.temperature == original_temperature
 assert isolde.sim_params.trajectory_smoothing == original_smoothing
-session.logger.info(f"CORRECTROTAMER_LOCAL_MDFF_OK {len(outliers)}")
+session.logger.info(f"DAQROTFIX_LOCAL_MDFF_OK {len(outliers)}")

@@ -1,12 +1,13 @@
-<BundleInfo name="ChimeraX-CorrectRotamer"
-            version="0.6.1" package="chimerax.correct_rotamer"
+<BundleInfo name="ChimeraX-DaQRotFix"
+            version="0.6.1" package="chimerax.daq_rot_fix"
             minSessionVersion="1" maxSessionVersion="1">
   <Author>Genki Terashi</Author>
   <Email>gterashi@purdue.edu</Email>
-  <URL>https://github.com/gterashi</URL>
-  <Synopsis>Automated local-MDFF correction of ISOLDE rotamer outliers</Synopsis>
+  <URL>https://github.com/gterashi/DaQRotFix</URL>
+  <Synopsis>Density-assisted Quick Rotamer Fix</Synopsis>
   <Description>
-    Enumerates ISOLDE canonical rotamers for existing outliers and performs
+    An independent ChimeraX extension for rapid, density-guided correction of
+    rotamer outliers. Requires ISOLDE. Enumerates canonical rotamers and performs
     probability-ordered local ISOLDE MDFF annealing and minimization trials
     with a restrained backbone.
     The outlier threshold is configurable and the active region is focused.
@@ -27,7 +28,7 @@
   <Classifiers>
     <PythonClassifier>Development Status :: 3 - Alpha</PythonClassifier>
     <PythonClassifier>License :: OSI Approved :: MIT License</PythonClassifier>
-    <ChimeraXClassifier>ChimeraX :: Tool :: Rotamer Optimizer :: Validation :: Automated rotamer correction with local ISOLDE MDFF</ChimeraXClassifier>
+    <ChimeraXClassifier>ChimeraX :: Tool :: DaQRotFix :: Validation :: Density-assisted quick rotamer correction using local ISOLDE MDFF</ChimeraXClassifier>
     <ChimeraXClassifier>ChimeraX :: Command :: correctrotamers :: Validation :: Correct ISOLDE rotamer outliers using map density</ChimeraXClassifier>
     <ChimeraXClassifier>ChimeraX :: Command :: correctrotamers mdff :: Validation :: Optimize rotamer outliers using local ISOLDE MDFF</ChimeraXClassifier>
   </Classifiers>

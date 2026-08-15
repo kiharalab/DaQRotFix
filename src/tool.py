@@ -1,4 +1,4 @@
-"""DAQplugin-styled ChimeraX graphical front end for CorrectRotamer."""
+"""DAQplugin-styled ChimeraX graphical front end for DaQRotFix."""
 
 try:
     from importlib.metadata import PackageNotFoundError, version as package_version
@@ -50,7 +50,7 @@ def _bundle_version():
     if package_version is None:
         return "0.6.1"
     try:
-        return package_version("ChimeraX-CorrectRotamer")
+        return package_version("ChimeraX-DaQRotFix")
     except Exception:
         return "0.6.1"
 
@@ -112,7 +112,7 @@ def _restore_view(session, state):
     view.center_of_rotation_method = state["center_of_rotation_method"]
 
 
-class CorrectRotamerTool(ToolInstance):
+class DaQRotFixTool(ToolInstance):
     SESSION_ENDURING = False
     SESSION_SAVE = False
     HELP = "help:command:correctrotamers"
@@ -127,7 +127,7 @@ class CorrectRotamerTool(ToolInstance):
 
     def __init__(self, session, tool_name):
         super().__init__(session, tool_name)
-        self.display_name = "Rotamer Optimizer"
+        self.display_name = "DaQRotFix"
         self._running = False
         self._report = None
         self._threshold_initialized = False
@@ -191,7 +191,7 @@ class CorrectRotamerTool(ToolInstance):
         header_row = QHBoxLayout()
         header_row.setContentsMargins(0, 0, 0, 0)
         header_row.setSpacing(sp(8))
-        title = QLabel("Rotamer Optimizer", root)
+        title = QLabel("DaQRotFix", root)
         title.setProperty("role", "title")
         version = QLabel(f"v{_bundle_version()}", root)
         version.setProperty("role", "version-badge")
@@ -201,7 +201,7 @@ class CorrectRotamerTool(ToolInstance):
         main_layout.addLayout(header_row)
 
         subtitle = QLabel(
-            "Automated rotamer correction with local ISOLDE MDFF",
+            "Density-assisted Quick Rotamer Fix",
             root,
         )
         subtitle.setProperty("role", "caption")
@@ -741,7 +741,7 @@ class CorrectRotamerTool(ToolInstance):
         if structure is None or volume is None:
             QMessageBox.warning(
                 self.tool_window.ui_area,
-                "Rotamer Optimizer",
+                "DaQRotFix",
                 "Choose both a structure and a density map.",
             )
             return
@@ -796,7 +796,7 @@ class CorrectRotamerTool(ToolInstance):
             self.summary.setText(str(error))
             self.session.logger.error(str(error))
             QMessageBox.critical(
-                self.tool_window.ui_area, "Rotamer Optimizer", str(error)
+                self.tool_window.ui_area, "DaQRotFix", str(error)
             )
         finally:
             self._running = False
@@ -857,7 +857,7 @@ class CorrectRotamerTool(ToolInstance):
     def _log_local_mdff_report(self, report):
         logger = self.session.logger
         logger.info(
-            f"Rotamer Optimizer: found {report.original_outlier_count} "
+            f"DaQRotFix: found {report.original_outlier_count} "
             f"original rotamer outlier(s) at threshold "
             f"{report.outlier_threshold * 100.0:.3g}%."
         )

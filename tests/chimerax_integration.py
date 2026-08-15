@@ -25,7 +25,7 @@ session.isolde = SimpleNamespace(
     simulation_running=False,
 )
 
-from chimerax.correct_rotamer.correction import (
+from chimerax.daq_rot_fix.correction import (
     correct_rotamer_outliers,
 )
 
@@ -39,7 +39,7 @@ assert all(
 assert mdff_mgr.enabled == mdff_enabled_before
 
 print(
-    "CORRECTROTAMER_INTEGRATION_OK",
+    "DAQROTFIX_INTEGRATION_OK",
     report.original_outlier_count,
     report.corrected_count,
 )

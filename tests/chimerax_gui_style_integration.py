@@ -5,12 +5,12 @@ from Qt.QtWidgets import QApplication, QLabel
 from chimerax.core.commands import run
 
 
-run(session, "ui tool show Rotamer Optimizer")
+run(session, "ui tool show DaQRotFix")
 QApplication.processEvents()
 tool = session.tools.find_by_class(
     __import__(
-        "chimerax.correct_rotamer.tool", fromlist=["CorrectRotamerTool"]
-    ).CorrectRotamerTool
+        "chimerax.daq_rot_fix.tool", fromlist=["DaQRotFixTool"]
+    ).DaQRotFixTool
 )[0]
 
 expected = {
@@ -51,4 +51,4 @@ assert tool._HEADERS[3] == "Local Outliers\n(Before → After)"
 assert tool.results_table.columnWidth(1) < 130
 assert tool.results_table.columnWidth(3) < 150
 assert "ISOLDE" in tool.mdff_status.text()
-session.logger.info(f"CORRECTROTAMER_PARAMETER_LABELS_WHITE {found}")
+session.logger.info(f"DAQROTFIX_PARAMETER_LABELS_WHITE {found}")

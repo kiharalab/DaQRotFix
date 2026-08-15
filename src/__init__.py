@@ -1,9 +1,9 @@
-"""ChimeraX CorrectRotamer bundle."""
+"""ChimeraX DaQRotFix bundle."""
 
 from chimerax.core.toolshed import BundleAPI
 
 
-class _CorrectRotamerAPI(BundleAPI):
+class _DaQRotFixAPI(BundleAPI):
     api_version = 1
 
     @staticmethod
@@ -38,11 +38,11 @@ class _CorrectRotamerAPI(BundleAPI):
 
     @staticmethod
     def start_tool(session, bundle_info, tool_info):
-        if tool_info.name not in ("Rotamer Optimizer", "Correct Rotamers"):
+        if tool_info.name != "DaQRotFix":
             raise ValueError(f"Unknown tool: {tool_info.name}")
-        from .tool import CorrectRotamerTool
+        from .tool import DaQRotFixTool
 
-        return CorrectRotamerTool(session, tool_info.name)
+        return DaQRotFixTool(session, tool_info.name)
 
 
-bundle_api = _CorrectRotamerAPI()
+bundle_api = _DaQRotFixAPI()

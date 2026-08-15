@@ -1,7 +1,11 @@
-# CorrectRotamer for ChimeraX
+# DaQRotFix
 
-CorrectRotamer is a ChimeraX bundle for automated local-MDFF optimization of
-ISOLDE rotamer outliers.
+**Density-assisted Quick Rotamer Fix**
+
+DaQRotFix is an independent ChimeraX extension for rapid, density-guided
+correction of rotamer outliers. It requires ISOLDE for rotamer validation and
+local-MDFF optimization. DaQRotFix is not affiliated with or endorsed by the
+ISOLDE developers or the University of Cambridge.
 
 It provides two deliberately separate workflows.
 
@@ -37,11 +41,11 @@ position-restrained while side-chain atoms remain mobile.
 ISOLDE must already be installed. From the ChimeraX command line:
 
 ```text
-devel install /path/to/CorrectRotamer
+devel install /path/to/DaQRotFix
 ```
 
 Restart ChimeraX after the first installation if the tool is not immediately
-listed. Open **Tools → Validation → Rotamer Optimizer**, or run:
+listed. Open **Tools → Validation → DaQRotFix**, or run:
 
 ```text
 correctrotamers #1 #2
@@ -107,5 +111,5 @@ Build the bundle with the installed ChimeraX executable:
 
 ```text
 /Applications/ChimeraX.app/Contents/bin/ChimeraX --nogui --exit \
-  --cmd "devel build /path/to/CorrectRotamer"
+  --cmd "devel build /path/to/DaQRotFix"
 ```

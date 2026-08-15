@@ -1,4 +1,4 @@
-"""Command registration for CorrectRotamer."""
+"""Command registration for DaQRotFix."""
 
 from chimerax.atomic import AtomicStructureArg
 from chimerax.core.commands import CmdDesc, FloatArg, IntArg
@@ -17,7 +17,7 @@ from .local_mdff import (
 def _log_report(session, report):
     logger = session.logger
     logger.info(
-        "Correct Rotamers: found "
+        "DaQRotFix: found "
         f"{report.original_outlier_count} original rotamer outlier(s)."
     )
     for result in report.residues:
@@ -30,7 +30,7 @@ def _log_report(session, report):
             f"mean side-chain density {result.selected.density_score:.6g}"
         )
     logger.info(
-        f"Correct Rotamers: corrected {report.corrected_count}/"
+        f"DaQRotFix: corrected {report.corrected_count}/"
         f"{report.original_outlier_count} original outlier(s). "
         "No ISOLDE simulation or minimization was started."
     )
@@ -59,7 +59,7 @@ correct_rotamers_desc = CmdDesc(
 def _log_local_mdff_report(session, report):
     logger = session.logger
     logger.info(
-        f"Rotamer Optimizer: found {report.original_outlier_count} "
+        f"DaQRotFix: found {report.original_outlier_count} "
         f"original rotamer outlier(s) at threshold "
         f"{report.outlier_threshold:.6g}."
     )
@@ -78,7 +78,7 @@ def _log_local_mdff_report(session, report):
                 f"{selected.local_outlier_count}"
             )
     logger.info(
-        f"Rotamer Optimizer: optimized {report.corrected_count}/"
+        f"DaQRotFix: optimized {report.corrected_count}/"
         f"{report.original_outlier_count} original outlier(s)."
     )
 

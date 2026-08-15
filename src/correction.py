@@ -225,7 +225,7 @@ def correct_rotamer_outliers(
     if mdff_mgr is None:
         raise UserError(
             "The selected map has no ISOLDE MDFF manager for this structure. "
-            "Add/enable the map in ISOLDE first; Correct Rotamers will not "
+            "Add/enable the map in ISOLDE first; DaQRotFix will not "
             "create a manager merely for scoring."
         )
 
