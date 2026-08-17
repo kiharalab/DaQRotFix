@@ -40,7 +40,7 @@ installation.
 1. Open the structure and density map in ChimeraX.
 2. Open ISOLDE, select the structure, and configure and enable the map's MDFF
    potential.
-3. Open **Tools → Validation → DaQRotFix**.
+3. Open **Tools → Structure Editing → DaQRotFix**.
 4. Select the structure and map, adjust options in **PARAMETERS**, and click
    **Optimize Side Chains with Local MDFF**.
 
@@ -108,22 +108,20 @@ correctrotamers mdff #1 #2 radius 5 initialTemperature 20 annealingUpdates 20 fi
 `coordinateUpdates` remains available as a legacy alias for
 `finalMinimizationUpdates`.
 
-## How automated local MDFF selects a rotamer
+## Automated workflow in DaQRotFix
 
-DaQRotFix snapshots the original outlier list, then processes those residues in
+DaQRotFix detects the current outlier list, then processes those residues in
 turn. For each residue it:
 
 1. Builds a local protein region and records its current rotamer outliers.
 2. Tries canonical targets in decreasing ISOLDE expected-frequency order.
 3. Restores the full pre-trial model coordinates before each target.
-4. Applies the target, checks that its scored side-chain atoms lie in the map,
-   and runs local MDFF annealing followed by final minimization.
+4. Runs local MDFF annealing followed by final minimization.
 5. Accepts the first target that fixes the target residue, reduces the local
    outlier count, and creates no new neighboring outlier.
 
 If no target meets all three acceptance conditions, the residue remains at its
-pre-trial coordinates. A residue fixed indirectly by an earlier local trial is
-recognized and skipped.
+pre-trial coordinates.
 
 During a trial, only the local protein region is mobile and ISOLDE supplies its
 fixed physical context shell. Backbone N, CA, C, and O atoms receive temporary
@@ -132,23 +130,6 @@ later trials. DaQRotFix also restores the user's prior backbone-restraint
 settings, selection, selected ISOLDE model, temperature, trajectory smoothing,
 and relevant simulation parameters after each trial.
 
-## Development
-
-Run the unit tests from a Python environment with NumPy installed:
-
-```text
-python3 -m unittest discover -s tests -p 'test_*.py'
-```
-
-Build the bundle from the ChimeraX command line:
-
-```text
-devel build /absolute/path/to/DaQRotFix
-```
-
-The `tests/chimerax_*_integration.py` files are ChimeraX smoke tests and must be
-run with ChimeraX rather than a standard Python interpreter.
-
 ## License
 
-[MIT](LICENSE)
+[GNU General Public License v3](LICENSE)

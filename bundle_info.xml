@@ -4,6 +4,7 @@
   <Author>Genki Terashi</Author>
   <Email>gterashi@purdue.edu</Email>
   <URL>https://github.com/gterashi/DaQRotFix</URL>
+  <License>GPL-3.0-only</License>
   <Synopsis>Density-assisted Quick Rotamer Fix</Synopsis>
   <Description>
     An independent ChimeraX extension for rapid, density-guided correction of
@@ -14,7 +15,7 @@
   </Description>
 
   <Categories>
-    <Category name="Validation"/>
+    <Category name="Structure Editing"/>
   </Categories>
 
   <Dependencies>
@@ -27,10 +28,10 @@
 
   <Classifiers>
     <PythonClassifier>Development Status :: 3 - Alpha</PythonClassifier>
-    <PythonClassifier>License :: OSI Approved :: MIT License</PythonClassifier>
-    <ChimeraXClassifier>ChimeraX :: Tool :: DaQRotFix :: Validation :: Density-assisted quick rotamer correction using local ISOLDE MDFF</ChimeraXClassifier>
-    <ChimeraXClassifier>ChimeraX :: Command :: correctrotamers :: Validation :: Correct ISOLDE rotamer outliers using map density</ChimeraXClassifier>
-    <ChimeraXClassifier>ChimeraX :: Command :: correctrotamers mdff :: Validation :: Optimize rotamer outliers using local ISOLDE MDFF</ChimeraXClassifier>
+    <PythonClassifier>License :: OSI Approved :: GNU General Public License v3 (GPLv3)</PythonClassifier>
+    <ChimeraXClassifier>ChimeraX :: Tool :: DaQRotFix :: Structure Editing :: Density-assisted quick rotamer correction using local ISOLDE MDFF</ChimeraXClassifier>
+    <ChimeraXClassifier>ChimeraX :: Command :: correctrotamers :: Structure Editing :: Correct ISOLDE rotamer outliers using map density</ChimeraXClassifier>
+    <ChimeraXClassifier>ChimeraX :: Command :: correctrotamers mdff :: Structure Editing :: Optimize rotamer outliers using local ISOLDE MDFF</ChimeraXClassifier>
   </Classifiers>
 
   <DataFiles>
