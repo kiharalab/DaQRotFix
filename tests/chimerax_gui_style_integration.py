@@ -1,10 +1,14 @@
 """Manual GUI smoke test for parameter-label contrast."""
 
+from pathlib import Path
+
 from Qt.QtGui import QPalette
 from Qt.QtWidgets import QApplication, QLabel
+from chimerax.isolde import tests as isolde_tests
 from chimerax.core.commands import run
 
 
+run(session, f'open "{Path(isolde_tests.__file__).with_name("1pmx_1.pdb")}"')
 run(session, "ui tool show DaQRotFix")
 QApplication.processEvents()
 tool = session.tools.find_by_class(
@@ -37,6 +41,11 @@ visible_text = {
 assert not any(text.startswith("Tries canonical rotamers") for text in visible_text)
 assert not any(text.startswith("This workflow explicitly") for text in visible_text)
 assert "Canonical rotamers are tried" in tool.local_mdff_button.toolTip()
+assert tool.local_mdff_button.text() == "Start Optimization"
+assert "Local MDFF Optimization" in visible_text
+assert "Optimize Side Chains with Local MDFF" not in visible_text
+assert tool.outlier_count_label.text().startswith("Rotamer outliers: ")
+assert tool.outlier_count_label.text().rsplit(" ", 1)[-1].isdigit()
 assert tool.initial_temperature.value() == 20.0
 assert tool.annealing_updates.minimum() == 1
 assert tool.annealing_updates.maximum() == 100

@@ -42,6 +42,7 @@ from .local_mdff import (
     DEFAULT_INITIAL_TEMPERATURE,
     DEFAULT_LOCAL_RADIUS,
     DEFAULT_OUTLIER_THRESHOLD,
+    _outliers_in_residues,
     optimize_sidechains_with_local_mdff,
 )
 
@@ -248,7 +249,7 @@ class DaQRotFixTool(ToolInstance):
         main_layout.addWidget(mdff_card)
 
         mdff_run_card, mdff_run_layout = self._make_card(
-            root, "Optimize Side Chains with Local MDFF", sp
+            root, "Local MDFF Optimization", sp
         )
         mdff_tooltip = (
             "<b>Automated Local MDFF</b><br>"
@@ -351,6 +352,7 @@ class DaQRotFixTool(ToolInstance):
         self.outlier_threshold.setToolTip(
             "A rotamer is an outlier when its ISOLDE P-value is below this percentage"
         )
+        self.outlier_threshold.valueChanged.connect(self._refresh_outlier_count)
         settings.addWidget(self.outlier_threshold, 6, 1)
         settings.setColumnStretch(0, 1)
         settings.setColumnStretch(1, 1)
@@ -367,12 +369,26 @@ class DaQRotFixTool(ToolInstance):
         parameters_layout.addWidget(threshold_note)
         parameters_layout.addStretch(1)
 
-        self.local_mdff_button = QPushButton("Optimize Side Chains with Local MDFF", root)
+        self.local_mdff_button = QPushButton("Start Optimization", root)
         self.local_mdff_button.setProperty("variant", "primary")
-        self.local_mdff_button.setMinimumWidth(sp(260, 190))
+        self.local_mdff_button.setMinimumWidth(sp(160, 130))
         self.local_mdff_button.setToolTip(mdff_tooltip)
         self.local_mdff_button.clicked.connect(self._run_local_mdff)
         mdff_run_layout.addWidget(self.local_mdff_button, 0, Qt.AlignLeft)
+
+        progress_header = QHBoxLayout()
+        progress_header.setContentsMargins(0, 0, 0, 0)
+        progress_header.setSpacing(sp(8))
+        progress_label = QLabel("Progress", root)
+        progress_label.setProperty("role", "caption")
+        self.outlier_count_label = QLabel("Rotamer outliers: —", root)
+        self.outlier_count_label.setProperty("role", "caption")
+        progress_header.addWidget(progress_label)
+        progress_header.addStretch(1)
+        progress_header.addWidget(
+            self.outlier_count_label, 0, Qt.AlignRight | Qt.AlignVCenter
+        )
+        mdff_run_layout.addLayout(progress_header)
 
         self.progress = QProgressBar(root)
         self.progress.setRange(0, 1)
@@ -608,6 +624,7 @@ class DaQRotFixTool(ToolInstance):
         self._choose_matching_map()
         self._initialize_outlier_threshold()
         self._update_readiness()
+        self._refresh_outlier_count()
 
     def _initialize_outlier_threshold(self):
         if self._threshold_initialized:
@@ -635,6 +652,33 @@ class DaQRotFixTool(ToolInstance):
     def _structure_changed(self):
         self._choose_matching_map()
         self._update_readiness()
+        self._refresh_outlier_count()
+
+    def _set_outlier_count(self, count):
+        value = "—" if count is None else str(int(count))
+        self.outlier_count_label.setText(f"Rotamer outliers: {value}")
+
+    def _refresh_outlier_count(self, *_args, force=False):
+        if self._running and not force:
+            return
+        structure = self.structure_menu.currentData()
+        if structure is None:
+            self._set_outlier_count(None)
+            return
+        try:
+            from chimerax.isolde import session_extensions
+
+            rotamer_mgr = session_extensions.get_rotamer_mgr(self.session)
+            threshold = self.outlier_threshold.value() / 100.0
+            count = len(
+                _outliers_in_residues(
+                    rotamer_mgr, structure.residues, threshold
+                )
+            )
+        except Exception:
+            self._set_outlier_count(None)
+            return
+        self._set_outlier_count(count)
 
     def _choose_matching_map(self):
         structure = self.structure_menu.currentData()
@@ -718,6 +762,7 @@ class DaQRotFixTool(ToolInstance):
         self.progress.setRange(0, max(1, total))
         self.progress.setValue(completed)
         if stage == "starting":
+            self._set_outlier_count(total)
             self.run_status.setText(
                 f"Found {total} original outlier(s). Preparing local MDFF…"
             )
@@ -727,11 +772,13 @@ class DaQRotFixTool(ToolInstance):
                 f"{detail}/{extra} ({completed + 1}/{total})"
             )
         elif stage == "residue":
+            self._refresh_outlier_count(force=True)
             status = "accepted" if detail.corrected else "unchanged"
             self.run_status.setText(
                 f"{residue_label(residue)}: {status} ({completed}/{total})"
             )
         elif stage == "complete":
+            self._refresh_outlier_count(force=True)
             self.run_status.setText("Automated local MDFF optimization complete.")
         QApplication.processEvents()
 
@@ -764,6 +811,7 @@ class DaQRotFixTool(ToolInstance):
         self.candidate_details.clear()
         self.summary.setText("Automated local MDFF optimization in progress…")
         self.progress.setRange(0, 0)
+        self.outlier_count_label.setText("Rotamer outliers: scanning…")
         self.run_status.setText("Finding original rotamer outliers…")
         QApplication.processEvents()
         try:
@@ -801,6 +849,7 @@ class DaQRotFixTool(ToolInstance):
         finally:
             self._running = False
             self._update_readiness()
+            self._refresh_outlier_count()
 
     def _populate_local_mdff_results(self, report):
         self.results_table.setHorizontalHeaderLabels(

@@ -38,7 +38,7 @@ Open:
 **Tools → Structure Editing → DaQRotFix**
 
 Select the structure and map, adjust the local-MDFF settings under
-**PARAMETERS**, and click **Optimize Side Chains with Local MDFF**. DaQRotFix
+**PARAMETERS**, and click **Start Optimization**. DaQRotFix
 asks for confirmation before starting simulations and restores the original
 camera view when the complete run finishes.
 

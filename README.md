@@ -42,7 +42,7 @@ installation.
    potential.
 3. Open **Tools → Structure Editing → DaQRotFix**.
 4. Select the structure and map, adjust options in **PARAMETERS**, and click
-   **Optimize Side Chains with Local MDFF**.
+   **Start Optimization**.
 
 The tool asks for confirmation before starting any simulations. During each
 candidate trial it focuses the local region; after the run it restores the
