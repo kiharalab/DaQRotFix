@@ -48,6 +48,10 @@ The tool asks for confirmation before starting any simulations. During each
 candidate trial it focuses the local region; after the run it restores the
 original camera view and displays a residue-by-residue results table.
 
+| MDFF setup required | Ready for optimization | Optimization in progress |
+| :---: | :---: | :---: |
+| <img src="img/gui1.png" alt="DaQRotFix showing that MDFF setup is required" width="260"> | <img src="img/gui2.png" alt="DaQRotFix ready to start local MDFF optimization" width="260"> | <img src="img/gui3.png" alt="DaQRotFix running local MDFF optimization with progress and current rotamer-outlier count" width="260"> |
+
 Default GUI settings are:
 
 | Setting | Default |
