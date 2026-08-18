@@ -114,4 +114,4 @@ DaQRotFix is distributed under the GNU General Public License v3.0 only
 
 ## Source Code
 
-<https://github.com/gterashi/DaQRotFix>
+<https://github.com/kiharalab/DaQRotFix>

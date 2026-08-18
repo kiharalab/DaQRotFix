@@ -3,7 +3,7 @@
             minSessionVersion="1" maxSessionVersion="1">
   <Author>Genki Terashi</Author>
   <Email>gterashi@purdue.edu</Email>
-  <URL>https://github.com/gterashi/DaQRotFix</URL>
+  <URL>https://github.com/kiharalab/DaQRotFix</URL>
   <License>GPL-3.0-only</License>
   <Synopsis>Density-assisted Quick Rotamer Fix</Synopsis>
   <Description>
