@@ -28,8 +28,7 @@ command that ranks canonical rotamers by map density.
 - An atomic structure and density map already associated through ISOLDE MDFF
 
 Before running DaQRotFix, open ISOLDE, select the structure, configure the
-structure/map MDFF association, and stop any active simulation. Automated local
-MDFF also requires the selected MDFF potential to be enabled.
+structure/map association, and stop any active simulation. 
 
 ## Graphical Interface
 
@@ -42,40 +41,44 @@ Select the structure and map, adjust the local-MDFF settings under
 asks for confirmation before starting simulations and restores the original
 camera view when the complete run finishes.
 
+### MDFF setup required
+
+<img src="https://cxtoolshed.rbvi.ucsf.edu/media/chimeraxdaqrotfix/screenshots/gui1.png" width="508">
+
+### Ready for optimization
+
+<img src="https://cxtoolshed.rbvi.ucsf.edu/media/chimeraxdaqrotfix/screenshots/gui2.png" width="508">
+
+### Optimization in progress
+
+<img src="https://cxtoolshed.rbvi.ucsf.edu/media/chimeraxdaqrotfix/screenshots/gui3.png" width="508">
+
 Default settings:
 
-| Setting | Default |
-| --- | ---: |
-| Local radius | 5 Å |
-| Initial temperature | 20 K |
-| Annealing coordinate updates | 20 |
-| Final temperature | 5 K |
-| Final minimization coordinate updates | 5 |
-| Backbone restraint | 500 kJ mol⁻¹ Å⁻² |
-| Rotamer-outlier threshold | Current ISOLDE cutoff, normally 0.05% |
+- **Local radius:** 5 Å
+- **Initial temperature:** 20 K
+- **Annealing coordinate updates:** 20
+- **Final temperature:** 5 K
+- **Final minimization coordinate updates:** 5
+- **Backbone restraint:** 500 kJ mol⁻¹ Å⁻²
+- **Rotamer-outlier threshold:** Current ISOLDE cutoff, normally 0.05%
 
 ## Commands
 
 Density-only canonical-rotamer selection:
 
-```text
-correctrotamers #1 #2
-```
+    correctrotamers #1 #2
 
 Automated local MDFF:
 
-```text
-correctrotamers mdff #1 #2
-```
+    correctrotamers mdff #1 #2
 
 In both commands, `#1` is the atomic structure and `#2` is its
 ISOLDE-associated density map.
 
 The local-MDFF command accepts the following optional keywords:
 
-```text
-radius 5 initialTemperature 20 annealingUpdates 20 finalTemperature 5 finalMinimizationUpdates 5 backboneSpringConstant 500 outlierThreshold 0.0005
-```
+    radius 5 initialTemperature 20 annealingUpdates 20 finalTemperature 5 finalMinimizationUpdates 5 backboneSpringConstant 500 outlierThreshold 0.0005
 
 The command-line outlier threshold is a P-value on a 0–1 scale; the graphical
 interface expresses the same threshold as a percentage.
@@ -103,9 +106,7 @@ is left unchanged.
 
 ## Author
 
-- Genki Terashi
-- Purdue University
-- <gterashi@purdue.edu>
+- Genki Terashi, Purdue University, gterashi@purdue.edu
 
 ## License
 
